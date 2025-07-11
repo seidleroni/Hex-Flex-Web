@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import type { SparseMemory } from '../services/sparseMemory';
 import { MemoryMinimap } from './MemoryMinimap';
