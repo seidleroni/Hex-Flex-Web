@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import type { SparseMemory } from '../services/sparseMemory';
 import { MemoryMinimap } from './MemoryMinimap';
@@ -120,7 +119,7 @@ export const MemoryMap: React.FC<MemoryMapProps> = ({ memory }) => {
   }
 
   return (
-    <div className="bg-gray-800/50 rounded-lg shadow-xl backdrop-blur-sm border border-gray-700 flex flex-col overflow-hidden">
+    <div className="bg-gray-800/50 rounded-lg shadow-xl backdrop-blur-sm border border-gray-700 flex flex-col overflow-hidden flex-grow">
       <div className="text-gray-400 bg-gray-800/80 backdrop-blur-sm z-10 flex-shrink-0 border-b border-gray-700">
         <table className="w-full text-sm text-left table-fixed">
           <thead>
@@ -137,7 +136,7 @@ export const MemoryMap: React.FC<MemoryMapProps> = ({ memory }) => {
         <div 
           ref={scrollContainerRef}
           onScroll={handleScroll}
-          className="overflow-auto max-h-[65vh] relative flex-1 no-scrollbar"
+          className="overflow-auto relative flex-1 no-scrollbar"
           aria-label="Memory Map"
         >
           <div style={{ height: `${totalHeight}px`, position: 'relative' }}>
