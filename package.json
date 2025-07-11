@@ -1,0 +1,23 @@
+
+{
+  "name": "hex-flex",
+  "version": "1.0.0",
+  "description": "A simple web tool for viewing the contents and memory map of Intel HEX data files.",
+  "main": "index.js",
+  "scripts": {
+    "build": "rm -rf dist && mkdir dist && esbuild index.tsx --bundle --outfile=dist/bundle.js --format=esm --platform=browser --external:react --external:react-dom/* --external:@google/genai && cp index.html dist/index.html && cp metadata.json dist/metadata.json"
+  },
+  "keywords": [
+    "react",
+    "hex",
+    "visualizer",
+    "esbuild",
+    "firmware",
+    "flex"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "esbuild": "^0.23.0"
+  }
+}

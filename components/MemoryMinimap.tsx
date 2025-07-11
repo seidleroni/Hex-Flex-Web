@@ -1,0 +1,206 @@
+import React, { useRef, useEffect, useCallback } from 'react';
+import type { SparseMemory } from '../services/sparseMemory';
+
+interface MemoryMinimapProps {
+  memory: SparseMemory;
+  scrollTop: number;
+  totalHeight: number;
+  viewportHeight: number;
+  onNavigate: (newScrollTop: number) => void;
+}
+
+const MINIMAP_WIDTH = 24;
+const BYTES_PER_ROW = 16;
+const DATA_COLOR = '#22d3ee'; // cyan-400
+const EMPTY_COLOR = '#374151'; // gray-700
+const VIEWPORT_FILL_COLOR = 'rgba(34, 211, 238, 0.5)'; // cyan-400 at 50% opacity
+const VIEWPORT_BORDER_COLOR = 'rgba(207, 250, 254, 1)'; // A bright, almost white cyan (cyan-100)
+
+// Safely gets the clientY from a MouseEvent or TouchEvent
+const getEventClientY = (e: MouseEvent | TouchEvent): number | null => {
+  if ('touches' in e) {
+    if (e.touches.length > 0) return e.touches[0].clientY;
+    if (e.changedTouches.length > 0) return e.changedTouches[0].clientY;
+    return null;
+  }
+  return e.clientY;
+};
+
+export const MemoryMinimap: React.FC<MemoryMinimapProps> = ({
+  memory,
+  scrollTop,
+  totalHeight,
+  viewportHeight,
+  onNavigate,
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const isDraggingRef = useRef(false);
+  const dragOffsetRef = useRef(0);
+
+  const drawMinimap = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Use the canvas's actual drawing buffer size
+    const { width, height } = canvas;
+    ctx.clearRect(0, 0, width, height);
+
+    if (memory.isEmpty() || height <= 0) return;
+
+    const globalStart = memory.getStartAddress();
+    const globalEnd = memory.getEndAddress();
+    const totalRowCount = Math.ceil((globalEnd - globalStart + 1) / BYTES_PER_ROW);
+
+    if (totalRowCount <= 0) return;
+
+    const rowsPerPixelY = totalRowCount / height;
+
+    for (let y = 0; y < height; y++) {
+      const startRow = Math.floor(y * rowsPerPixelY);
+      const endRow = Math.max(startRow + 1, Math.floor((y + 1) * rowsPerPixelY));
+      
+      let hasData = false;
+      const startAddress = globalStart + startRow * BYTES_PER_ROW;
+      const endAddress = Math.min(globalStart + endRow * BYTES_PER_ROW, globalEnd + 1);
+
+      for (let addr = startAddress; addr < endAddress; addr++) {
+        if (memory.getByte(addr) !== null) {
+          hasData = true;
+          break;
+        }
+      }
+      
+      ctx.fillStyle = hasData ? DATA_COLOR : EMPTY_COLOR;
+      ctx.fillRect(0, y, width, 1);
+    }
+    
+    if (totalHeight > 0 && viewportHeight > 0) {
+      const mapHeight = height;
+      const viewportTop = (scrollTop / totalHeight) * mapHeight;
+      const viewportHeightOnMap = (viewportHeight / totalHeight) * mapHeight;
+      
+      // Draw high-contrast viewport
+      ctx.fillStyle = VIEWPORT_FILL_COLOR;
+      ctx.strokeStyle = VIEWPORT_BORDER_COLOR;
+      ctx.lineWidth = 1;
+
+      const rectToDraw = {
+        x: 0.5,
+        y: viewportTop + 0.5,
+        w: width -1,
+        h: Math.max(2, viewportHeightOnMap) -1
+      };
+
+      ctx.fillRect(rectToDraw.x, rectToDraw.y, rectToDraw.w, rectToDraw.h);
+      ctx.strokeRect(rectToDraw.x, rectToDraw.y, rectToDraw.w, rectToDraw.h);
+    }
+  }, [memory, scrollTop, totalHeight, viewportHeight]);
+
+  // This effect synchronizes canvas resolution with its display size
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const resizeObserver = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        // Check to prevent excessive redraws if size is 0
+        if (width > 0 && height > 0) {
+           canvas.width = width;
+           canvas.height = height;
+           // Redraw after resizing
+           drawMinimap();
+        }
+      }
+    });
+
+    resizeObserver.observe(canvas);
+    return () => resizeObserver.disconnect();
+  }, [drawMinimap]);
+
+
+  const handleInteractionStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas || totalHeight <= viewportHeight) return;
+
+    const nativeEvent = e.nativeEvent;
+    nativeEvent.preventDefault();
+    isDraggingRef.current = true;
+
+    const startY = getEventClientY(nativeEvent);
+    if (startY === null) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const mapHeight = canvas.clientHeight;
+    
+    const thumbHeight = (viewportHeight / totalHeight) * mapHeight;
+    const thumbTop = (scrollTop / totalHeight) * mapHeight;
+    const clickYOnMap = startY - rect.top;
+
+    if(clickYOnMap >= thumbTop && clickYOnMap <= thumbTop + thumbHeight) {
+        dragOffsetRef.current = clickYOnMap - thumbTop;
+    } else {
+        dragOffsetRef.current = thumbHeight / 2;
+    }
+    
+    const newScrollTopRatio = (clickYOnMap - dragOffsetRef.current) / mapHeight;
+    const newScrollTop = Math.max(0, Math.min(newScrollTopRatio * totalHeight, totalHeight - viewportHeight));
+    onNavigate(newScrollTop);
+
+  }, [onNavigate, totalHeight, viewportHeight, scrollTop]);
+
+  useEffect(() => {
+    const handleInteractionMove = (e: MouseEvent | TouchEvent) => {
+        if (!isDraggingRef.current) return;
+        
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        e.preventDefault();
+
+        const moveY = getEventClientY(e);
+        if (moveY === null) return;
+        
+        const rect = canvas.getBoundingClientRect();
+        const clickYOnMap = moveY - rect.top;
+        const mapHeight = canvas.clientHeight;
+
+        const newScrollTopRatio = (clickYOnMap - dragOffsetRef.current) / mapHeight;
+        const newScrollTop = newScrollTopRatio * totalHeight;
+        
+        onNavigate(Math.max(0, Math.min(newScrollTop, totalHeight - viewportHeight)));
+    };
+    
+    const handleInteractionEnd = () => {
+        isDraggingRef.current = false;
+        dragOffsetRef.current = 0;
+    };
+
+    window.addEventListener('mousemove', handleInteractionMove);
+    window.addEventListener('touchmove', handleInteractionMove, { passive: false });
+    window.addEventListener('mouseup', handleInteractionEnd);
+    window.addEventListener('touchend', handleInteractionEnd);
+
+    return () => {
+        window.removeEventListener('mousemove', handleInteractionMove);
+        window.removeEventListener('touchmove', handleInteractionMove);
+        window.removeEventListener('mouseup', handleInteractionEnd);
+        window.removeEventListener('touchend', handleInteractionEnd);
+    };
+  }, [onNavigate, totalHeight, viewportHeight]);
+
+  return (
+    <div className="w-6 bg-gray-800 ml-1 cursor-pointer">
+      <canvas
+        ref={canvasRef}
+        className="w-full h-full"
+        onMouseDown={handleInteractionStart}
+        onTouchStart={handleInteractionStart}
+        aria-label="Interactive memory map navigator"
+      />
+    </div>
+  );
+};
