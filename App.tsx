@@ -78,24 +78,22 @@ const App: React.FC = () => {
 
 
   return (
-    <div className="h-full bg-gray-900 text-gray-200 font-sans flex flex-col">
+    <div className="min-h-screen bg-gray-900 text-gray-200 font-sans flex flex-col">
       <Header />
-      <main className="flex-grow container mx-auto p-4 md:p-6 lg:p-8 flex flex-col min-h-0">
+      <main className="flex-grow container mx-auto p-4 md:p-6 lg:p-8 flex flex-col items-center">
         {!memory ? (
-          <div className="flex-grow flex items-center justify-center">
-            <div className="w-full max-w-2xl text-center">
-              <FileUpload onFileSelect={handleFileSelect} />
-              {error && (
-                <div className="mt-4 bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg relative" role="alert">
-                  <strong className="font-bold">Error: </strong>
-                  <span className="block sm:inline">{error}</span>
-                </div>
-              )}
-            </div>
+          <div className="w-full max-w-2xl text-center">
+            <FileUpload onFileSelect={handleFileSelect} />
+            {error && (
+              <div className="mt-4 bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg relative" role="alert">
+                <strong className="font-bold">Error: </strong>
+                <span className="block sm:inline">{error}</span>
+              </div>
+            )}
           </div>
         ) : (
-          <div className="w-full max-w-7xl flex flex-col flex-grow min-h-0">
-            <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4 flex-shrink-0">
+          <div className="w-full max-w-7xl">
+            <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
                <div className="text-center md:text-left">
                   <h2 className="text-2xl font-bold text-cyan-400">Memory Map</h2>
                   <p className="text-gray-400">File: {fileName}</p>
@@ -112,7 +110,7 @@ const App: React.FC = () => {
             </div>
             
             {stats && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 flex-shrink-0">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 text-center">
                         <p className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Start Address</p>
                         <p className="text-2xl font-mono text-cyan-400 mt-1">{formatHex(stats.startAddress)}</p>
@@ -128,7 +126,7 @@ const App: React.FC = () => {
                 </div>
             )}
 
-            <div className="mt-4 flex-grow flex flex-col min-h-0">
+            <div className="mt-4">
                 <MemoryMap memory={memory} />
             </div>
           </div>
