@@ -1,13 +1,16 @@
 import React, { useRef, useEffect, useCallback } from 'react';
-import type { SparseMemory } from '../services/sparseMemory';
-import type { VirtualRow } from '../types';
+import type { ComparisonMemory } from '../services/memoryComparer';
+import { DiffType } from '../types';
 import { 
     BYTES_PER_ROW,
-    MINIMAP_DATA_COLOR,
-    MINIMAP_EMPTY_COLOR,
-    MINIMAP_GAP_COLOR,
     MINIMAP_VIEWPORT_FILL_COLOR,
-    MINIMAP_VIEWPORT_BORDER_COLOR
+    MINIMAP_VIEWPORT_BORDER_COLOR,
+    MINIMAP_EMPTY_COLOR,
+    MINIMAP_DATA_COLOR,
+    MINIMAP_GAP_COLOR,
+    DIFF_MODIFIED_MARKER,
+    DIFF_ADDED_MARKER,
+    DIFF_REMOVED_MARKER,
 } from '../constants';
 
 // Safely gets the clientY from a MouseEvent or TouchEvent
@@ -20,16 +23,14 @@ const getEventClientY = (e: MouseEvent | TouchEvent): number | null => {
   return e.clientY;
 };
 
-export const MemoryMinimap: React.FC<{
-  memory: SparseMemory;
-  virtualRows: VirtualRow[];
+export const ComparisonMinimap: React.FC<{
+  comparison: ComparisonMemory;
   scrollTop: number;
   totalHeight: number;
   viewportHeight: number;
   onNavigate: (newScrollTop: number) => void;
 }> = ({
-  memory,
-  virtualRows,
+  comparison,
   scrollTop,
   totalHeight,
   viewportHeight,
@@ -46,48 +47,55 @@ export const MemoryMinimap: React.FC<{
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
+    // Use the canvas's actual drawing buffer size
     const { width, height } = canvas;
     ctx.clearRect(0, 0, width, height);
 
-    if (memory.isEmpty() || height <= 0 || !virtualRows || virtualRows.length === 0) return;
-
+    const virtualRows = comparison.getVirtualRows();
     const totalRowCount = virtualRows.length;
-    const rowsPerPixelY = totalRowCount / height;
+    
+    if (totalRowCount <= 0 || height <= 0) return;
+    
+    const rowsPerPixel = totalRowCount / height;
 
     for (let y = 0; y < height; y++) {
-      const startVRowIndex = Math.floor(y * rowsPerPixelY);
-      const endVRowIndex = Math.max(startVRowIndex + 1, Math.floor((y + 1) * rowsPerPixelY));
+      const startVRowIndex = Math.floor(y * rowsPerPixel);
+      const endVRowIndex = Math.max(startVRowIndex + 1, Math.floor((y + 1) * rowsPerPixel));
+      
+      const pixelSummary = { hasModified: false, hasAdded: false, hasRemoved: false, hasData: false, hasGap: false };
 
-      let pixelHasData = false;
-      let pixelHasGap = false;
-
-      // Iterate over all virtual rows that this single pixel represents
-      for (let i = startVRowIndex; i < endVRowIndex && i < totalRowCount; i++) {
+      for (let i = startVRowIndex; i < endVRowIndex && i < virtualRows.length; i++) {
         const vRow = virtualRows[i];
         if (!vRow) continue;
 
         if (vRow.type === 'gap') {
-          pixelHasGap = true;
-          // Gap has highest priority, so we can stop checking for this pixel.
-          break;
+          pixelSummary.hasGap = true;
+          continue;
         }
 
-        // This code only runs if no gap has been found for this pixel yet.
-        // Check if this data row actually contains any non-null bytes.
-        // We set pixelHasData but don't break the main vRow loop, as a later
-        // vRow for this same pixel could be a gap.
-        for (let addr = vRow.address; addr < vRow.address + BYTES_PER_ROW; addr++) {
-          if (memory.getByte(addr) !== null) {
-            pixelHasData = true;
-            break; // Exit inner byte-check loop, we found data in this row.
+        for (let j = 0; j < BYTES_PER_ROW; j++) {
+          const entry = comparison.getDiffEntry(vRow.address + j);
+          if (entry.byteA !== null || entry.byteB !== null) pixelSummary.hasData = true;
+
+          switch (entry.type) {
+            case DiffType.Modified: pixelSummary.hasModified = true; break;
+            case DiffType.Added:   pixelSummary.hasAdded = true; break;
+            case DiffType.Removed: pixelSummary.hasRemoved = true; break;
           }
         }
+        // Optimization: if we found the highest-priority diff type, we can stop for this pixel.
+        if (pixelSummary.hasModified) break;
       }
       
-      // Gaps have the highest priority.
-      if (pixelHasGap) {
+      if (pixelSummary.hasModified) {
+        ctx.fillStyle = DIFF_MODIFIED_MARKER;
+      } else if (pixelSummary.hasAdded) {
+        ctx.fillStyle = DIFF_ADDED_MARKER;
+      } else if (pixelSummary.hasRemoved) {
+        ctx.fillStyle = DIFF_REMOVED_MARKER;
+      } else if (pixelSummary.hasGap) {
         ctx.fillStyle = MINIMAP_GAP_COLOR;
-      } else if (pixelHasData) {
+      } else if (pixelSummary.hasData) {
         ctx.fillStyle = MINIMAP_DATA_COLOR;
       } else {
         ctx.fillStyle = MINIMAP_EMPTY_COLOR;
@@ -100,7 +108,6 @@ export const MemoryMinimap: React.FC<{
       const viewportTop = (scrollTop / totalHeight) * mapHeight;
       const viewportHeightOnMap = (viewportHeight / totalHeight) * mapHeight;
       
-      // Draw high-contrast viewport
       ctx.fillStyle = MINIMAP_VIEWPORT_FILL_COLOR;
       ctx.strokeStyle = MINIMAP_VIEWPORT_BORDER_COLOR;
       ctx.lineWidth = 1;
@@ -115,7 +122,7 @@ export const MemoryMinimap: React.FC<{
       ctx.fillRect(rectToDraw.x, rectToDraw.y, rectToDraw.w, rectToDraw.h);
       ctx.strokeRect(rectToDraw.x, rectToDraw.y, rectToDraw.w, rectToDraw.h);
     }
-  }, [memory, virtualRows, scrollTop, totalHeight, viewportHeight]);
+  }, [comparison, scrollTop, totalHeight, viewportHeight]);
 
   // This effect synchronizes canvas resolution with its display size
   useEffect(() => {
@@ -125,11 +132,9 @@ export const MemoryMinimap: React.FC<{
     const resizeObserver = new ResizeObserver(entries => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
-        // Check to prevent excessive redraws if size is 0
         if (width > 0 && height > 0) {
            canvas.width = width;
            canvas.height = height;
-           // Redraw after resizing
            drawMinimap();
         }
       }
@@ -217,7 +222,7 @@ export const MemoryMinimap: React.FC<{
         className="w-full h-full"
         onMouseDown={handleInteractionStart}
         onTouchStart={handleInteractionStart}
-        aria-label="Interactive memory map navigator"
+        aria-label="Interactive memory comparison map navigator"
       />
     </div>
   );

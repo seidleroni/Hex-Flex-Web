@@ -1,4 +1,6 @@
 
+
+import { SEGMENT_GAP_THRESHOLD } from '../constants';
 const DEFAULT_BLOCK_SIZE = 64 * 1024;
 
 export class SparseMemory {
@@ -107,5 +109,63 @@ export class SparseMemory {
         this.memoryBlocks.clear();
         this.invalidateSortedKeys();
     }
+
+    public getMemoryBlocks(): Map<number, (number | null)[]> {
+        return this.memoryBlocks;
+    }
     
+    public getBlockSize(): number {
+        return this.blockSize;
+    }
+
+    /**
+     * Identifies and merges contiguous regions of memory that contain data.
+     * @returns An array of segment objects, each with a start, end address, and size.
+     */
+    public getDataSegments(): { start: number; end: number; size: number }[] {
+        if (this.isEmpty()) return [];
+
+        const segments: { start: number; end: number; size: number }[] = [];
+        const sortedKeys = this.getSortedKeys();
+
+        let currentSegment: { start: number; end: number } | null = null;
+
+        for (const key of sortedKeys) {
+            const block = this.memoryBlocks.get(key)!;
+            let firstDataInBlock = -1;
+            let lastDataInBlock = -1;
+
+            for (let i = 0; i < this.blockSize; i++) {
+                if (block[i] !== null) {
+                    if (firstDataInBlock === -1) {
+                        firstDataInBlock = key + i;
+                    }
+                    lastDataInBlock = key + i;
+                }
+            }
+
+            if (firstDataInBlock !== -1) { // If block has data
+                if (currentSegment === null) {
+                    // Start a new segment
+                    currentSegment = { start: firstDataInBlock, end: lastDataInBlock };
+                } else {
+                    // Check if this block is contiguous with the current segment, allowing for small gaps.
+                    const gapSize = firstDataInBlock - currentSegment.end - 1;
+                    if (gapSize < SEGMENT_GAP_THRESHOLD) {
+                        currentSegment.end = lastDataInBlock;
+                    } else {
+                        // The gap is large enough. Finalize the old segment and start a new one.
+                        segments.push({ ...currentSegment, size: currentSegment.end - currentSegment.start + 1 });
+                        currentSegment = { start: firstDataInBlock, end: lastDataInBlock };
+                    }
+                }
+            }
+        }
+
+        if (currentSegment !== null) {
+            segments.push({ ...currentSegment, size: currentSegment.end - currentSegment.start + 1 });
+        }
+
+        return segments;
+    }
 }
