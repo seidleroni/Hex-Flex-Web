@@ -121,7 +121,7 @@ const MemoryView: React.FC<MemoryViewProps> = ({ memory, fileName, onLoadNewFile
                 </form>
             </div>
 
-            {stats && <Statistics stats={stats} />}
+            {stats && <Statistics stats={stats} className="mb-4" />}
             
             {stats && <MinimapLegend />}
 

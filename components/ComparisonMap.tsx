@@ -87,9 +87,9 @@ const AsciiChar: React.FC<{ diff: DiffEntry; isHighlighted: boolean; }> = React.
   );
 });
 
-const GapRow: React.FC<{ row: VirtualRow & { type: 'gap' } }> = React.memo(({ row }) => (
+const GapRow: React.FC<{ row: VirtualRow & { type: 'gap' }; showAscii: boolean }> = React.memo(({ row, showAscii }) => (
     <tr style={{ height: `${ROW_HEIGHT_PX}px` }}>
-        <td colSpan={3} className="text-center py-1">
+        <td colSpan={showAscii ? 3 : 2} className="text-center py-1">
             <div 
               className="inline-block w-full" 
               title={`Skipped addresses from ${formatHex(row.startAddress)} to ${formatHex(row.endAddress)}`}
@@ -143,12 +143,29 @@ interface ComparisonMapProps {
 }
 
 export const ComparisonMap = forwardRef<ComparisonMapActions, ComparisonMapProps>(({ comparison, onScrollUpdate }, ref) => {
+  const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [highlightedRowStart, setHighlightedRowStart] = useState<number | null>(null);
   const [highlightedDiffAddress, setHighlightedDiffAddress] = useState<number | null>(null);
   const lastReportedSegmentIndex = useRef<number | null>(null);
+  const [showAscii, setShowAscii] = useState(true);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const threshold = 680; // pixels
+        setShowAscii(entry.contentRect.width > threshold);
+      }
+    });
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   const memoizedData = useMemo(() => {
     const virtualRows = comparison.getVirtualRows();
@@ -261,7 +278,7 @@ export const ComparisonMap = forwardRef<ComparisonMapActions, ComparisonMapProps
   for (let i = startIndex; i < endIndex; i++) {
     const row = virtualRows[i];
     if (row.type === 'gap') {
-        renderedRows.push(<GapRow key={`gap-${i}`} row={row} />);
+        renderedRows.push(<GapRow key={`gap-${i}`} row={row} showAscii={showAscii} />);
     } else {
         const rowAddress = row.address;
         const rowDiffs = Array.from({ length: BYTES_PER_ROW }, (_, j) => comparison.getDiffEntry(rowAddress + j));
@@ -275,7 +292,7 @@ export const ComparisonMap = forwardRef<ComparisonMapActions, ComparisonMapProps
                         return <HexByte key={idx} diff={diff} isHighlighted={isHighlighted} />;
                     })}
                 </td>
-                <td className="p-2 w-44 font-mono">
+                <td className={`p-2 w-44 font-mono ${!showAscii && 'hidden'}`}>
                     {rowDiffs.map((diff, idx) => {
                         const isHighlighted = highlightedDiffAddress === (rowAddress + idx);
                         return <AsciiChar key={idx} diff={diff} isHighlighted={isHighlighted} />;
@@ -291,14 +308,14 @@ export const ComparisonMap = forwardRef<ComparisonMapActions, ComparisonMapProps
   const isNextDisabled = highlightedDiffAddress !== null && currentIndex === diffAddresses.length - 1;
 
   return (
-    <div className="bg-gray-800/50 rounded-lg shadow-xl backdrop-blur-sm border border-gray-700 flex flex-col overflow-hidden flex-grow">
+    <div ref={containerRef} className="bg-gray-800/50 rounded-lg shadow-xl backdrop-blur-sm border border-gray-700 flex flex-col overflow-hidden flex-grow">
         <div className="text-gray-400 bg-gray-800/80 backdrop-blur-sm z-10 flex-shrink-0 border-b border-gray-700">
             <table className="w-full text-sm text-left table-fixed">
             <thead>
                 <tr>
                 <th className="p-2 w-36 font-semibold">Address</th>
                 <th className="p-2 font-semibold">Data (Hex) - File B</th>
-                <th className="p-2 w-44 font-semibold">ASCII - File B</th>
+                <th className={`p-2 w-44 font-semibold ${!showAscii && 'hidden'}`}>ASCII - File B</th>
                 </tr>
             </thead>
             </table>

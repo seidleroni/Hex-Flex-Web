@@ -22,10 +22,10 @@ const FileSummaryCard: React.FC<FileSummaryCardProps> = ({ label, fileState, onR
     }, [fileState.memory]);
 
     return (
-        <div className="bg-gray-800/50 rounded-xl border border-gray-700 p-6 flex flex-col h-full">
-            <div className="flex justify-between items-center mb-4">
+        <div className="bg-gray-800/50 rounded-xl border border-gray-700 p-3 flex flex-col">
+            <div className="flex justify-between items-center mb-2">
                 <div>
-                    <h3 className="text-xl font-bold text-cyan-400">{label}</h3>
+                    <h3 className="text-lg font-bold text-cyan-400">{label}</h3>
                     <p className="text-sm text-gray-400 truncate" title={fileState.fileName}>
                         {fileState.fileName}
                     </p>
@@ -40,11 +40,11 @@ const FileSummaryCard: React.FC<FileSummaryCardProps> = ({ label, fileState, onR
                 </button>
             </div>
             {stats ? (
-                 <div className="flex-grow flex flex-col justify-center">
+                 <div>
                     <Statistics stats={stats} />
                 </div>
             ) : (
-                <div className="flex-grow flex items-center justify-center">
+                <div className="flex items-center justify-center py-8">
                     <p className="text-gray-500">No data to display.</p>
                 </div>
             )}

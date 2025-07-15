@@ -47,9 +47,9 @@ const AsciiChar: React.FC<{ byte: number | null; isHighlighted?: boolean }> = Re
 });
 
 // A component to display a collapsed gap in the memory map
-const GapRow: React.FC<{ row: VirtualRow & { type: 'gap' } }> = React.memo(({ row }) => (
+const GapRow: React.FC<{ row: VirtualRow & { type: 'gap' }; showAscii: boolean }> = React.memo(({ row, showAscii }) => (
     <tr style={{ height: `${ROW_HEIGHT_PX}px` }}>
-        <td colSpan={3} className="text-center py-1">
+        <td colSpan={showAscii ? 3 : 2} className="text-center py-1">
             <div 
               className="inline-block w-full" 
               title={`Skipped addresses from ${formatHex(row.startAddress)} to ${formatHex(row.endAddress)}`}
@@ -72,12 +72,29 @@ interface MemoryMapProps {
 }
 
 export const MemoryMap = forwardRef<MemoryMapActions, MemoryMapProps>(({ memory, onScrollUpdate }, ref) => {
+  const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [highlightedRowStart, setHighlightedRowStart] = useState<number | null>(null);
   const [highlightedByteAddress, setHighlightedByteAddress] = useState<number | null>(null);
   const lastReportedSegmentIndex = useRef<number | null>(null);
+  const [showAscii, setShowAscii] = useState(true);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const threshold = 680; // pixels, chosen to give enough space for hex data
+        setShowAscii(entry.contentRect.width > threshold);
+      }
+    });
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   const memoizedData = useMemo(() => {
     if (memory.isEmpty()) return null;
@@ -226,7 +243,7 @@ export const MemoryMap = forwardRef<MemoryMapActions, MemoryMapProps>(({ memory,
   for (let i = startIndex; i < endIndex; i++) {
     const row = virtualRows[i];
     if (row.type === 'gap') {
-        visibleRenderedRows.push(<GapRow key={`gap-${row.startAddress}`} row={row} />);
+        visibleRenderedRows.push(<GapRow key={`gap-${row.startAddress}`} row={row} showAscii={showAscii} />);
     } else {
         const rowAddress = row.address;
         const rowBytes = Array.from({ length: BYTES_PER_ROW }, (_, j) => memory.getByte(rowAddress + j));
@@ -242,7 +259,7 @@ export const MemoryMap = forwardRef<MemoryMapActions, MemoryMapProps>(({ memory,
                     return <HexByte key={idx} byte={byte} isHighlighted={isByteHighlighted} />;
                 })}
             </td>
-            <td className="p-2 w-44 font-mono">
+            <td className={`p-2 w-44 font-mono ${!showAscii && 'hidden'}`}>
                 {rowBytes.map((byte, idx) => {
                     const currentByteAddress = rowAddress + idx;
                     const isByteHighlighted = isRowHighlighted && highlightedByteAddress === currentByteAddress;
@@ -255,14 +272,14 @@ export const MemoryMap = forwardRef<MemoryMapActions, MemoryMapProps>(({ memory,
   }
 
   return (
-    <div className="bg-gray-800/50 rounded-lg shadow-xl backdrop-blur-sm border border-gray-700 flex flex-col overflow-hidden flex-grow">
+    <div ref={containerRef} className="bg-gray-800/50 rounded-lg shadow-xl backdrop-blur-sm border border-gray-700 flex flex-col overflow-hidden flex-grow">
       <div className="text-gray-400 bg-gray-800/80 backdrop-blur-sm z-10 flex-shrink-0 border-b border-gray-700">
         <table className="w-full text-sm text-left table-fixed">
           <thead>
             <tr>
               <th className="p-2 w-36 font-semibold">Address</th>
               <th className="p-2 font-semibold">Data (Hex)</th>
-              <th className="p-2 w-44 font-semibold">ASCII</th>
+              <th className={`p-2 w-44 font-semibold ${!showAscii && 'hidden'}`}>ASCII</th>
             </tr>
           </thead>
         </table>
