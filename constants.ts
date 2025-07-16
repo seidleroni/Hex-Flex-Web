@@ -4,8 +4,8 @@ export const ROW_HEIGHT_PX = 36;
 export const BUFFER_ROWS = 10;
 export const MINIMAP_WIDTH = 24;
 
-// Threshold for collapsing empty regions in the single file view
-export const SINGLE_VIEW_GAP_THRESHOLD = 0x100000; // 1MB
+// Threshold for collapsing empty regions in the file view
+export const VIEW_GAP_THRESHOLD = 0x100000; // 1MB
 
 // The minimum size of an empty memory region to be considered a "gap" that separates two data segments.
 export const SEGMENT_GAP_THRESHOLD = 1024; // 1KB
@@ -13,6 +13,7 @@ export const SEGMENT_GAP_THRESHOLD = 1024; // 1KB
 // Colors for Minimap
 export const MINIMAP_DATA_COLOR = '#22d3ee'; // cyan-400
 export const MINIMAP_EMPTY_COLOR = '#374151'; // gray-700
+export const MINIMAP_ERASED_COLOR = '#94a3b8'; // slate-400
 export const MINIMAP_GAP_COLOR = '#8b5cf6'; // violet-500
 export const MINIMAP_VIEWPORT_FILL_COLOR = 'rgba(34, 211, 238, 0.5)';
 export const MINIMAP_VIEWPORT_BORDER_COLOR = 'rgba(207, 250, 254, 1)';

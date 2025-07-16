@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useRef, useEffect, forwardRef, u
 import type { SparseMemory } from '../services/sparseMemory';
 import type { VirtualRow } from '../types';
 import { MemoryMinimap } from './MemoryMinimap';
-import { BYTES_PER_ROW, EMPTY_BYTE_HEX_PLACEHOLDER, ROW_HEIGHT_PX, BUFFER_ROWS, SINGLE_VIEW_GAP_THRESHOLD } from '../constants';
+import { BYTES_PER_ROW, EMPTY_BYTE_HEX_PLACEHOLDER, ROW_HEIGHT_PX, BUFFER_ROWS, VIEW_GAP_THRESHOLD } from '../constants';
 import { formatHex, formatBytes } from '../utils';
 
 const formatByte = (n: number) => n.toString(16).toUpperCase().padStart(2, '0');
@@ -111,7 +111,7 @@ export const MemoryMap = forwardRef<MemoryMapActions, MemoryMapProps>(({ memory,
       const currentStartRow = Math.floor(segment.start / BYTES_PER_ROW) * BYTES_PER_ROW;
       const gapSize = currentStartRow - gapStart;
 
-      if (gapSize > SINGLE_VIEW_GAP_THRESHOLD) {
+      if (gapSize > VIEW_GAP_THRESHOLD) {
         virtualRows.push({
           type: 'gap',
           skippedBytes: gapSize,

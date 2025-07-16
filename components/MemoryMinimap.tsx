@@ -5,6 +5,7 @@ import {
     BYTES_PER_ROW,
     MINIMAP_DATA_COLOR,
     MINIMAP_EMPTY_COLOR,
+    MINIMAP_ERASED_COLOR,
     MINIMAP_GAP_COLOR,
     MINIMAP_VIEWPORT_FILL_COLOR,
     MINIMAP_VIEWPORT_BORDER_COLOR
@@ -58,8 +59,7 @@ export const MemoryMinimap: React.FC<{
       const startVRowIndex = Math.floor(y * rowsPerPixelY);
       const endVRowIndex = Math.max(startVRowIndex + 1, Math.floor((y + 1) * rowsPerPixelY));
 
-      let pixelHasData = false;
-      let pixelHasGap = false;
+      const pixelSummary = { hasData: false, hasGap: false, hasErased: false };
 
       // Iterate over all virtual rows that this single pixel represents
       for (let i = startVRowIndex; i < endVRowIndex && i < totalRowCount; i++) {
@@ -67,30 +67,52 @@ export const MemoryMinimap: React.FC<{
         if (!vRow) continue;
 
         if (vRow.type === 'gap') {
-          pixelHasGap = true;
-          // Gap has highest priority, so we can stop checking for this pixel.
-          break;
+          // A VirtualGapRow is created for very large empty/erased spaces.
+          // We can sample the first byte to guess the gap's nature.
+          if (memory.getByte(vRow.startAddress) === 0xFF) {
+              pixelSummary.hasErased = true;
+          } else {
+              pixelSummary.hasGap = true;
+          }
+          continue;
         }
 
-        // This code only runs if no gap has been found for this pixel yet.
-        // Check if this data row actually contains any non-null bytes.
-        // We set pixelHasData but don't break the main vRow loop, as a later
-        // vRow for this same pixel could be a gap.
+        // This code only runs for 'data' vRows.
+        // Check if the row contains data, is purely erased, or just empty.
+        let isRowData = false;
+        let isRowErased = false;
+        let hasContent = false;
+        
         for (let addr = vRow.address; addr < vRow.address + BYTES_PER_ROW; addr++) {
-          if (memory.getByte(addr) !== null) {
-            pixelHasData = true;
-            break; // Exit inner byte-check loop, we found data in this row.
-          }
+            const byte = memory.getByte(addr);
+            if (byte !== null) {
+                hasContent = true;
+                if (byte === 0xFF) {
+                    isRowErased = true;
+                } else {
+                    isRowData = true;
+                    break; // Data has priority within a row.
+                }
+            }
+        }
+        
+        if (isRowData) {
+            pixelSummary.hasData = true;
+        } else if (hasContent && isRowErased) {
+            // This row is purely 0xFF bytes (or a mix of 0xFF and null).
+            pixelSummary.hasErased = true;
         }
       }
       
-      // Gaps have the highest priority.
-      if (pixelHasGap) {
-        ctx.fillStyle = MINIMAP_GAP_COLOR;
-      } else if (pixelHasData) {
-        ctx.fillStyle = MINIMAP_DATA_COLOR;
+      // Set color based on priority: Data > Erased > Gap > Empty
+      if (pixelSummary.hasData) {
+          ctx.fillStyle = MINIMAP_DATA_COLOR;
+      } else if (pixelSummary.hasErased) {
+          ctx.fillStyle = MINIMAP_ERASED_COLOR;
+      } else if (pixelSummary.hasGap) {
+          ctx.fillStyle = MINIMAP_GAP_COLOR;
       } else {
-        ctx.fillStyle = MINIMAP_EMPTY_COLOR;
+          ctx.fillStyle = MINIMAP_EMPTY_COLOR;
       }
       ctx.fillRect(0, y, width, 1);
     }

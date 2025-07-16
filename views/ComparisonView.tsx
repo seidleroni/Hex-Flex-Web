@@ -13,6 +13,7 @@ import {
     DIFF_MODIFIED_MARKER,
     DIFF_REMOVED_MARKER,
     MINIMAP_DATA_COLOR,
+    MINIMAP_ERASED_COLOR,
     MINIMAP_EMPTY_COLOR,
     MINIMAP_GAP_COLOR
 } from '../constants';
@@ -67,6 +68,9 @@ const DiffLegend: React.FC = () => (
         </div>
         <div className="flex items-center gap-2">
             <span className="w-4 h-4 rounded" style={{ backgroundColor: MINIMAP_DATA_COLOR }}></span> Data
+        </div>
+        <div className="flex items-center gap-2">
+            <span className="w-4 h-4 rounded" style={{ backgroundColor: MINIMAP_ERASED_COLOR }}></span> Erased (0xFF)
         </div>
         <div className="flex items-center gap-2">
             <span className="w-4 h-4 rounded" style={{ backgroundColor: MINIMAP_EMPTY_COLOR }}></span> Empty Space

@@ -1,7 +1,7 @@
 import type { SparseMemory } from './services/sparseMemory';
 import type { ComparisonMemory } from './services/memoryComparer';
 
-export type ViewMode = 'single' | 'compare';
+export type ViewMode = 'view' | 'compare';
 
 export interface MemoryStats {
   startAddress: number;

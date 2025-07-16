@@ -24,11 +24,11 @@ const ViewSwitcher: React.FC<HeaderProps> = ({ viewMode, setViewMode }) => {
     return (
         <div className="flex items-center p-1 bg-gray-900/60 rounded-lg">
             <button
-                onClick={() => setViewMode('single')}
-                className={`${baseClasses} rounded-l-md ${viewMode === 'single' ? `${activeClasses} ${activeOutlineClasses}` : inactiveClasses}`}
-                aria-pressed={viewMode === 'single'}
+                onClick={() => setViewMode('view')}
+                className={`${baseClasses} rounded-l-md ${viewMode === 'view' ? `${activeClasses} ${activeOutlineClasses}` : inactiveClasses}`}
+                aria-pressed={viewMode === 'view'}
             >
-                Single
+                View
             </button>
             <button
                 onClick={() => setViewMode('compare')}
@@ -52,7 +52,7 @@ const Header: React.FC<HeaderProps> = ({ viewMode, setViewMode }) => {
               <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
                 Hex Flex
               </h1>
-              <p className="text-sm text-gray-400 hidden md:block">The simple web tool for viewing Intel HEX data.</p>
+              <p className="text-sm text-gray-400 hidden md:block">A web tool to view and compare Intel Hex files</p>
             </div>
         </div>
         <ViewSwitcher viewMode={viewMode} setViewMode={setViewMode} />

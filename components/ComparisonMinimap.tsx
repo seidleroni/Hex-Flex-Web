@@ -7,6 +7,7 @@ import {
     MINIMAP_VIEWPORT_BORDER_COLOR,
     MINIMAP_EMPTY_COLOR,
     MINIMAP_DATA_COLOR,
+    MINIMAP_ERASED_COLOR,
     MINIMAP_GAP_COLOR,
     DIFF_MODIFIED_MARKER,
     DIFF_ADDED_MARKER,
@@ -62,7 +63,7 @@ export const ComparisonMinimap: React.FC<{
       const startVRowIndex = Math.floor(y * rowsPerPixel);
       const endVRowIndex = Math.max(startVRowIndex + 1, Math.floor((y + 1) * rowsPerPixel));
       
-      const pixelSummary = { hasModified: false, hasAdded: false, hasRemoved: false, hasData: false, hasGap: false };
+      const pixelSummary = { hasModified: false, hasAdded: false, hasRemoved: false, hasData: false, hasGap: false, hasErased: false };
 
       for (let i = startVRowIndex; i < endVRowIndex && i < virtualRows.length; i++) {
         const vRow = virtualRows[i];
@@ -75,28 +76,40 @@ export const ComparisonMinimap: React.FC<{
 
         for (let j = 0; j < BYTES_PER_ROW; j++) {
           const entry = comparison.getDiffEntry(vRow.address + j);
-          if (entry.byteA !== null || entry.byteB !== null) pixelSummary.hasData = true;
 
           switch (entry.type) {
             case DiffType.Modified: pixelSummary.hasModified = true; break;
             case DiffType.Added:   pixelSummary.hasAdded = true; break;
             case DiffType.Removed: pixelSummary.hasRemoved = true; break;
+            case DiffType.Unchanged:
+              // If it's unchanged, check if it's erased or regular data
+              if (entry.byteA !== null) { // or byteB, they are the same
+                  if (entry.byteA === 0xFF) {
+                      pixelSummary.hasErased = true;
+                  } else {
+                      pixelSummary.hasData = true;
+                  }
+              }
+              break;
           }
         }
         // Optimization: if we found the highest-priority diff type, we can stop for this pixel.
         if (pixelSummary.hasModified) break;
       }
       
+      // Set color based on priority: Diffs > Data > Erased > Gap > Empty
       if (pixelSummary.hasModified) {
         ctx.fillStyle = DIFF_MODIFIED_MARKER;
       } else if (pixelSummary.hasAdded) {
         ctx.fillStyle = DIFF_ADDED_MARKER;
       } else if (pixelSummary.hasRemoved) {
         ctx.fillStyle = DIFF_REMOVED_MARKER;
-      } else if (pixelSummary.hasGap) {
-        ctx.fillStyle = MINIMAP_GAP_COLOR;
       } else if (pixelSummary.hasData) {
         ctx.fillStyle = MINIMAP_DATA_COLOR;
+      } else if (pixelSummary.hasErased) {
+        ctx.fillStyle = MINIMAP_ERASED_COLOR;
+      } else if (pixelSummary.hasGap) {
+        ctx.fillStyle = MINIMAP_GAP_COLOR;
       } else {
         ctx.fillStyle = MINIMAP_EMPTY_COLOR;
       }

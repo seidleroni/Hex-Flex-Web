@@ -119,52 +119,70 @@ export class SparseMemory {
     }
 
     /**
-     * Identifies and merges contiguous regions of memory that contain data.
+     * Identifies and merges contiguous regions of memory that contain "meaningful" data.
+     * "Meaningful" data is defined as any byte that is not null and not 0xFF.
+     * Gaps can be regions of null bytes, 0xFF bytes, or a combination of both.
      * @returns An array of segment objects, each with a start, end address, and size.
      */
     public getDataSegments(): { start: number; end: number; size: number }[] {
         if (this.isEmpty()) return [];
 
-        const segments: { start: number; end: number; size: number }[] = [];
+        const allSubSegments: { start: number; end: number }[] = [];
         const sortedKeys = this.getSortedKeys();
 
-        let currentSegment: { start: number; end: number } | null = null;
-
+        // 1. Collect all "meaningful" sub-segments from each block.
+        // A meaningful byte is not null and not 0xFF.
         for (const key of sortedKeys) {
             const block = this.memoryBlocks.get(key)!;
-            let firstDataInBlock = -1;
-            let lastDataInBlock = -1;
+            let currentSubSegment: { start: number; end: number } | null = null;
 
-            for (let i = 0; i < this.blockSize; i++) {
-                if (block[i] !== null) {
-                    if (firstDataInBlock === -1) {
-                        firstDataInBlock = key + i;
-                    }
-                    lastDataInBlock = key + i;
-                }
-            }
+            for (let offset = 0; offset < this.blockSize; offset++) {
+                const byte = block[offset];
+                const isMeaningfulByte = byte !== null && byte !== 0xFF;
 
-            if (firstDataInBlock !== -1) { // If block has data
-                if (currentSegment === null) {
-                    // Start a new segment
-                    currentSegment = { start: firstDataInBlock, end: lastDataInBlock };
-                } else {
-                    // Check if this block is contiguous with the current segment, allowing for small gaps.
-                    const gapSize = firstDataInBlock - currentSegment.end - 1;
-                    if (gapSize < SEGMENT_GAP_THRESHOLD) {
-                        currentSegment.end = lastDataInBlock;
+                if (isMeaningfulByte) {
+                    const addr = key + offset;
+                    if (currentSubSegment === null) {
+                        currentSubSegment = { start: addr, end: addr };
                     } else {
-                        // The gap is large enough. Finalize the old segment and start a new one.
-                        segments.push({ ...currentSegment, size: currentSegment.end - currentSegment.start + 1 });
-                        currentSegment = { start: firstDataInBlock, end: lastDataInBlock };
+                        currentSubSegment.end = addr;
+                    }
+                } else { // This is a gap byte (null or 0xFF)
+                    if (currentSubSegment !== null) {
+                        // End of a sub-segment, push it and reset.
+                        allSubSegments.push(currentSubSegment);
+                        currentSubSegment = null;
                     }
                 }
             }
+            // If a sub-segment extends to the end of the block, push it.
+            if (currentSubSegment !== null) {
+                allSubSegments.push(currentSubSegment);
+            }
+        }
+        
+        if (allSubSegments.length === 0) return [];
+
+        // 2. Merge the collected sub-segments into final segments based on SEGMENT_GAP_THRESHOLD.
+        const segments: { start: number; end: number; size: number }[] = [];
+        let currentSegment = { ...allSubSegments[0] };
+
+        for (let i = 1; i < allSubSegments.length; i++) {
+            const nextSubSegment = allSubSegments[i];
+            const gapSize = nextSubSegment.start - currentSegment.end - 1;
+            
+            if (gapSize < SEGMENT_GAP_THRESHOLD) {
+                // The gap is small, so merge this sub-segment into the current segment.
+                currentSegment.end = nextSubSegment.end;
+            } else {
+                // The gap is large, so finalize the current segment and start a new one.
+                segments.push({ ...currentSegment, size: currentSegment.end - currentSegment.start + 1 });
+                currentSegment = { ...nextSubSegment };
+            }
         }
 
-        if (currentSegment !== null) {
-            segments.push({ ...currentSegment, size: currentSegment.end - currentSegment.start + 1 });
-        }
+        // Add the very last segment.
+        segments.push({ ...currentSegment, size: currentSegment.end - currentSegment.start + 1 });
 
         return segments;
     }
