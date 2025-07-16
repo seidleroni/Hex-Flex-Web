@@ -12,7 +12,7 @@ interface FileUploadProps {
 const FileUpload: React.FC<FileUploadProps> = ({ 
   onFileSelect,
   title = <><span className="text-cyan-400">Click to upload</span> or drag and drop a file</>,
-  subtitle = "Intel HEX (.hex) files only",
+  subtitle = "Any file extension is welcome. We'll check the content.",
   className
 }) => {
   const [isDragging, setIsDragging] = useState(false);
@@ -72,7 +72,6 @@ const FileUpload: React.FC<FileUploadProps> = ({
       <input
         ref={fileInputRef}
         type="file"
-        accept=".hex"
         className="hidden"
         onChange={handleFileChange}
         aria-label="File upload input"

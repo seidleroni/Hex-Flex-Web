@@ -1,6 +1,8 @@
+
 import { useState, useCallback, useReducer } from 'react';
 import { parseHexFile } from '../services/hexParser';
 import { FileState, ComparisonState } from '../types';
+import { isIntelHexFile } from '../services/fileValidator';
 
 type Action =
   | { type: 'PARSE_START'; fileKey: 'fileA' | 'fileB'; fileName: string }
@@ -65,12 +67,13 @@ const useHexFileComparison = () => {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   const parseFile = useCallback(async (file: File, fileKey: 'fileA' | 'fileB') => {
-    if (!file.name.toLowerCase().endsWith('.hex')) {
-      dispatch({ type: 'PARSE_ERROR', fileKey, error: "Invalid file type. Please upload a '.hex' file." });
+    dispatch({ type: 'PARSE_START', fileKey, fileName: file.name });
+    
+    const isValidHex = await isIntelHexFile(file);
+    if (!isValidHex) {
+      dispatch({ type: 'PARSE_ERROR', fileKey, error: "Invalid file format. The file does not appear to be a valid Intel HEX file." });
       return;
     }
-    
-    dispatch({ type: 'PARSE_START', fileKey, fileName: file.name });
 
     try {
       const content = await file.text();

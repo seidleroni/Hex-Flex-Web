@@ -1,7 +1,9 @@
+
 import { useState, useCallback } from 'react';
 import { parseHexFile } from '../services/hexParser';
 import { SparseMemory } from '../services/sparseMemory';
 import { FileState } from '../types';
+import { isIntelHexFile } from '../services/fileValidator';
 
 export const useHexFileParser = (): [FileState, (file: File) => Promise<void>, () => void] => {
   const [memory, setMemory] = useState<SparseMemory | null>(null);
@@ -15,8 +17,9 @@ export const useHexFileParser = (): [FileState, (file: File) => Promise<void>, (
     setFileName('');
     setIsLoading(true);
 
-    if (!file.name.toLowerCase().endsWith('.hex')) {
-      setError("Invalid file type. Please upload a '.hex' file.");
+    const isValidHex = await isIntelHexFile(file);
+    if (!isValidHex) {
+      setError("Invalid file format. The file does not appear to be a valid Intel HEX file.");
       setIsLoading(false);
       return;
     }
