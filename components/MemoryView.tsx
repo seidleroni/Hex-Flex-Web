@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import type { SparseMemory } from '../services/sparseMemory';
 import { MemoryStats } from '../types';
 import Statistics from './Statistics';
@@ -6,6 +6,7 @@ import { MemoryMap, MemoryMapActions } from './MemoryMap';
 import { ResetIcon, SearchIcon } from './Icons';
 import SegmentPanel from './SegmentPanel';
 import MinimapLegend from './MinimapLegend';
+import { useSegmentManager } from '../hooks/useSegmentManager';
 
 interface MemoryViewProps {
     memory: SparseMemory;
@@ -17,16 +18,8 @@ const MemoryView: React.FC<MemoryViewProps> = ({ memory, fileName, onLoadNewFile
     const memoryMapRef = useRef<MemoryMapActions>(null);
     const [addressInput, setAddressInput] = useState('');
     const [inputError, setInputError] = useState<string | null>(null);
-    const [activeSegmentIndex, setActiveSegmentIndex] = useState<number>(0);
-
-    const dataSegments = useMemo(() => {
-        if (memory.isEmpty()) return [];
-        return memory.getDataSegments();
-    }, [memory]);
-
-    useEffect(() => {
-        setActiveSegmentIndex(0);
-    }, [dataSegments]);
+    
+    const { segments, activeSegmentIndex, handleSegmentClick, handleScrollUpdate } = useSegmentManager(memory, memoryMapRef);
 
     const stats: MemoryStats | null = useMemo(() => {
         if (memory.isEmpty()) {
@@ -69,14 +62,6 @@ const MemoryView: React.FC<MemoryViewProps> = ({ memory, fileName, onLoadNewFile
             setInputError(null);
         }
     }
-
-    const handleScrollUpdate = useCallback((index: number) => {
-        setActiveSegmentIndex(index);
-    }, []);
-
-    const handleSegmentClick = useCallback((address: number) => {
-        memoryMapRef.current?.goToAddress(address);
-    }, []);
 
     return (
         <div className="w-full max-w-screen-2xl mx-auto flex flex-col flex-grow min-h-0">
@@ -126,16 +111,14 @@ const MemoryView: React.FC<MemoryViewProps> = ({ memory, fileName, onLoadNewFile
             {stats && <MinimapLegend />}
 
             <div className="flex-grow flex flex-row min-h-0 gap-4">
-                {dataSegments.length > 1 && (
+                {segments.length > 1 && (
                      <SegmentPanel
-                        segments={dataSegments}
+                        segments={segments}
                         activeSegmentIndex={activeSegmentIndex}
                         onSegmentClick={handleSegmentClick}
                     />
                 )}
-                <div className="flex-grow flex flex-col min-h-0">
-                    <MemoryMap ref={memoryMapRef} memory={memory} onScrollUpdate={handleScrollUpdate} />
-                </div>
+                <MemoryMap ref={memoryMapRef} memory={memory} onScrollUpdate={handleScrollUpdate} />
             </div>
         </div>
     );
