@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import Header from './components/Header';
+import Footer from './components/Footer';
 import SingleFileView from './views/SingleFileView';
 import ComparisonView from './views/ComparisonView';
 import { ViewMode } from './types';
@@ -13,6 +14,7 @@ const App: React.FC = () => {
       <main className="flex-grow container mx-auto p-4 md:p-6 lg:p-8 flex flex-col min-h-0 items-center justify-center">
         {viewMode === 'view' ? <SingleFileView /> : <ComparisonView />}
       </main>
+      <Footer />
     </div>
   );
 };
