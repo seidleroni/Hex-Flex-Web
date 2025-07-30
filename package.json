@@ -4,7 +4,7 @@
   "description": "A simple web tool for viewing the contents and memory map of Intel HEX data files.",
   "main": "index.js",
   "scripts": {
-    "build": "rm -rf dist && mkdir dist && esbuild index.tsx --bundle --outfile=dist/bundle.js --define:process.env.APP_BUILD_NUMBER='\"${APP_BUILD_NUMBER:-dev}\"' --define:process.env.APP_COMMIT_SHA='\"${APP_COMMIT_SHA:-local}\"' --format=esm --platform=browser --external:react --external:react-dom/* --external:@google/genai && cp index.html dist/index.html && cp metadata.json dist/metadata.json && cp index.css dist/index.css"
+    "build": "rm -rf dist && mkdir dist && esbuild index.tsx --bundle --outfile=dist/bundle.js --define:process.env.APP_BUILD_NUMBER=\"'${APP_BUILD_NUMBER:-dev}'\" --define:process.env.APP_COMMIT_SHA=\"'${APP_COMMIT_SHA:-local}'\" --format=esm --platform=browser --external:react --external:react-dom/* --external:@google/genai && cp index.html dist/index.html && cp metadata.json dist/metadata.json && cp index.css dist/index.css"
   },
   "keywords": [
     "react",
