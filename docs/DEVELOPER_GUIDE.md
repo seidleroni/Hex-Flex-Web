@@ -2,17 +2,47 @@
 
 ## Introduction
 
-Welcome to the Hex Flex developer documentation. This guide provides a deep dive into the project's architecture, code, and core concepts.
+Welcome to the Hex Flex developer documentation. This guide provides a technical overview of the project's architecture, code, and core concepts, intended for those who wish to understand, contribute to, or maintain the codebase.
 
-### Target Audience
-
-This guide is for a seasoned software engineer who is curious about the Hex Flex codebase but may not be an expert in modern web development. We'll assume you understand core programming concepts (data structures, algorithms, modularity) but might be unfamiliar with technologies like React, TypeScript, or the browser environment. We'll try to draw parallels to concepts from other domains where possible.
+This guide explores the technology stack, key data structures, and the application's data flow for its main features.
 
 ### Project Philosophy
 
 -   **Zero Backend**: The application is entirely client-side. This simplifies deployment (just static files) and guarantees user data privacy.
 -   **Performance First**: Firmware files can be large and sparse. The application is architected to handle this gracefully without freezing the user's browser.
 -   **Modern but Minimal**: The project uses modern tools (React, TypeScript) but avoids an overly complex ecosystem.
+
+---
+
+## Getting Started: Local Development & Building
+
+This project is built using React, TypeScript, and `esbuild`. To get a local copy running for development or to build it from source, follow these steps.
+
+### Prerequisites
+
+You need to have [Node.js](https://nodejs.org/) and `npm` (which comes with Node.js) installed to run the build script.
+
+### Building the Project
+
+1.  **Install Dependencies**: The only development dependency is `esbuild`. Install it by running:
+    ```bash
+    npm install
+    ```
+
+2.  **Run the Build Script**: To build the application, run:
+    ```bash
+    npm run build
+    ```
+    This command will compile the TypeScript/React code, bundle it into a single JavaScript file, and place all necessary assets (`index.html`, `bundle.js`, etc.) into a `dist/` directory.
+
+3.  **Run a Local Server**: You cannot open `dist/index.html` directly in your browser due to security restrictions (CORS policy). You need to serve the `dist` directory using a local web server. A simple way to do this is with Python:
+
+    *   If you have Python 3:
+        ```bash
+        cd dist
+        python -m http.server
+        ```
+    *   Then, open your browser and navigate to `http://localhost:8000`.
 
 ---
 

@@ -1,7 +1,6 @@
-
 # Hex Flex - User Guide
 
-Welcome to the Hex Flex User Guide! This document will walk you through all the features of the application.
+Welcome to the Hex Flex User Guide! This document will walk you through all the features of the application. You can follow along using the **[live version](https://seidleroni.github.io/Hex-Flex-Web/)**.
 
 ## Table of Contents
 
@@ -14,8 +13,6 @@ Welcome to the Hex Flex User Guide! This document will walk you through all the 
 ## The Main Interface
 
 The Hex Flex interface is designed to be clean and intuitive. Here are the main parts:
-
- <!-- Placeholder for an actual image -->
 
 1.  **Header**: At the top, you'll find the application title and the View Switcher.
 2.  **View Switcher**: Allows you to toggle between the **View** (for a single file) and **Compare** (for two files) modes.
@@ -53,7 +50,7 @@ Below the header, you'll find three cards displaying key statistics about your f
 
 #### The Memory Grid
 
-This is a classic hex editor view with three main columns:
+This is a standard hex editor view with three main columns:
 -   **Address**: The starting memory address for each row (in hexadecimal).
 -   **Data (Hex)**: The raw byte values in hexadecimal format. Empty bytes are shown as `--`.
 -   **ASCII**: The ASCII representation of the bytes. Non-printable characters are shown as a dot (`.`).
@@ -77,13 +74,13 @@ On the right side of the memory grid is a minimap, which provides a high-level, 
     -   **Large Gap**: A visual representation of a very large, collapsed gap.
 -   **Navigation**: The minimap is interactive.
     -   The translucent rectangle represents your current viewport.
-    -   **Click or drag** anywhere on the minimap to instantly navigate to that part of the file.
+    -   **Click or drag** anywhere on the minimap to navigate to that part of the file.
 
 ---
 
 ## Comparison View
 
-The Comparison View allows you to see the differences between two HEX files. This is incredibly useful for checking what changed between two firmware versions.
+The Comparison View allows you to see the differences between two HEX files. This is useful for checking what changed between two firmware versions.
 
 ### 1. Uploading Two Files
 
