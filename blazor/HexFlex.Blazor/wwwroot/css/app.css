@@ -385,6 +385,7 @@ html, body {
     gap: 1.5rem;
     width: 100%;
     max-width: 64rem;
+    align-items: start;
 }
 
 @media (min-width: 768px) {

@@ -14,6 +14,7 @@
     <div class="compare-upload-grid">
         @* File A *@
         <div class="compare-upload-slot">
+            <h3>File A (Original)</h3>
             @if (MemoryA is not null)
             {
                 <FileInfoCard FileName="@FileNameA"
@@ -24,7 +25,6 @@
             }
             else
             {
-                <h3>File A (Original)</h3>
                 <FileUpload OnFileSelected="HandleFileASelected" />
                 @if (ErrorA is not null)
                 {
@@ -37,6 +37,7 @@
 
         @* File B *@
         <div class="compare-upload-slot">
+            <h3>File B (Modified)</h3>
             @if (MemoryB is not null)
             {
                 <FileInfoCard FileName="@FileNameB"
@@ -47,7 +48,6 @@
             }
             else
             {
-                <h3>File B (Modified)</h3>
                 <FileUpload OnFileSelected="HandleFileBSelected" />
                 @if (ErrorB is not null)
                 {
