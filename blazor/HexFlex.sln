@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HexFlex.Blazor", "HexFlex.B
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HexFlex.Tests", "HexFlex.Tests\HexFlex.Tests.csproj", "{9D947CF9-F69F-4EC6-B4A2-FCD35B46C49B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HexFlex.Cli", "HexFlex.Cli\HexFlex.Cli.csproj", "{BE16A452-3B67-43A2-A4CE-94B74B8FBBC7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -41,6 +43,18 @@ Global
 		{9D947CF9-F69F-4EC6-B4A2-FCD35B46C49B}.Release|x64.Build.0 = Release|Any CPU
 		{9D947CF9-F69F-4EC6-B4A2-FCD35B46C49B}.Release|x86.ActiveCfg = Release|Any CPU
 		{9D947CF9-F69F-4EC6-B4A2-FCD35B46C49B}.Release|x86.Build.0 = Release|Any CPU
+		{BE16A452-3B67-43A2-A4CE-94B74B8FBBC7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BE16A452-3B67-43A2-A4CE-94B74B8FBBC7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BE16A452-3B67-43A2-A4CE-94B74B8FBBC7}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{BE16A452-3B67-43A2-A4CE-94B74B8FBBC7}.Debug|x64.Build.0 = Debug|Any CPU
+		{BE16A452-3B67-43A2-A4CE-94B74B8FBBC7}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{BE16A452-3B67-43A2-A4CE-94B74B8FBBC7}.Debug|x86.Build.0 = Debug|Any CPU
+		{BE16A452-3B67-43A2-A4CE-94B74B8FBBC7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BE16A452-3B67-43A2-A4CE-94B74B8FBBC7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BE16A452-3B67-43A2-A4CE-94B74B8FBBC7}.Release|x64.ActiveCfg = Release|Any CPU
+		{BE16A452-3B67-43A2-A4CE-94B74B8FBBC7}.Release|x64.Build.0 = Release|Any CPU
+		{BE16A452-3B67-43A2-A4CE-94B74B8FBBC7}.Release|x86.ActiveCfg = Release|Any CPU
+		{BE16A452-3B67-43A2-A4CE-94B74B8FBBC7}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
