@@ -93,6 +93,26 @@ page.locator('input[type="file"]').first.set_input_files(HEX_FILE_2)
 
 Playwright saves screenshots to disk as PNG files. Claude Code can view these directly using the `Read` tool on the image path, since it supports reading image files. This closes the loop — no browser extension or MCP permissions needed.
 
+## Visual / Layout Checklist
+
+Screenshots are assertions — but they need to be *examined*, not just captured. When reviewing Playwright screenshots, check for these issues before marking a test as passing:
+
+### Alignment & Spacing
+- **Side-by-side elements must have matching heights.** When two cards/panels sit in a grid row, their top edges, bottom edges, and overall height must match. This is the most common visual bug.
+- **Consistent margins and padding.** Elements in the same context (e.g., both slots in compare view) should have identical spacing. Watch for one element having `margin-top` when its sibling doesn't.
+- **Grid/flex alignment.** After changing layout, verify with screenshots that show *mixed states* (e.g., one slot loaded, one empty) — these asymmetric states are where alignment bugs hide.
+
+### Common Pitfalls (Blazor-Specific)
+- **Conditional rendering changes spacing.** When an `@if` block swaps one component for another (e.g., upload zone → file info card), the replacement may have different margins/padding. Always put shared structural elements (headings, labels) *outside* the conditional.
+- **`margin-top` on reusable components.** A component designed for one context (e.g., upload zone with `margin-top` below a heading) may break in another context (e.g., inside a grid cell). Override margins in container-specific CSS.
+- **Flex stretch vs. content height.** Cards in a grid row default to content height unless `flex: 1` forces them to stretch. Always verify both the "both loaded" and "one loaded" states.
+
+### What to Screenshot
+For any layout with multiple panels or columns, capture:
+1. **Empty state** — all panels showing placeholder/upload UI
+2. **Mixed state** — one panel loaded, others empty (this is where bugs show)
+3. **Full state** — all panels loaded
+
 ## Test Output
 
 All screenshots and artifacts are saved to `test_output/` (gitignored). The directory is cleaned and recreated at the start of each test run.
@@ -119,6 +139,22 @@ Note: On Windows, set `PYTHONIOENCODING=utf-8` to handle Unicode characters in b
 Located in `test_files/`:
 - `package_complete_123.hex` — ~1.8MB, 745.67 KB data, 3 segments
 - `package_complete_v142.hex` — ~1.9MB, 764.64 KB data, 3 segments
+
+## Running the Blazor Test Suite
+
+```bash
+# Start the Blazor dev server
+cd blazor/HexFlex.Blazor && dotnet run --urls "http://localhost:5050" &
+
+# Run E2E tests
+PYTHONIOENCODING=utf-8 uv run python test_e2e_blazor.py
+
+# Clean up the server when done
+netstat -ano | grep :5050 | grep LISTENING
+taskkill //PID <pid> //F
+```
+
+Screenshots are saved to `test_output/blazor_screenshots/`.
 
 ## Cleanup
 
