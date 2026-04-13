@@ -21,4 +21,17 @@ dist-ssr
 *.ntvs*
 *.njsproj
 *.sln
+!blazor/*.sln
 *.sw?
+
+# Test output (screenshots, fixtures, reports)
+test_output/
+
+# Python / uv
+__pycache__/
+*.pyc
+.venv/
+
+# .NET / Blazor build artifacts
+blazor/**/bin/
+blazor/**/obj/

@@ -1,0 +1,9 @@
+[project]
+name = "hex-flex-tests"
+version = "0.1.0"
+description = "Test tooling for Hex Flex (E2E, validation, fixtures)"
+requires-python = ">=3.10"
+dependencies = [
+    "playwright",
+    "intelhex",
+]
