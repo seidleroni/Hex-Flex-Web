@@ -108,16 +108,13 @@ We do NOT assume the React app is correct. Instead we validate against `intelhex
 **Goal:** Basic Blazor app with navigation (View/Compare tabs) and file upload.
 
 ### Tasks
-1. Set up Blazor layout: Header, Footer, main content area
-2. Implement View/Compare tab switching
-3. Implement file upload component (drag-drop + click)
-4. Wire up hex file parsing on upload (using Phase 1 services)
-5. Display basic file info after upload (filename, data size, segment count)
-6. Style with CSS to roughly match current dark theme
-7. Playwright E2E tests:
-   - Page loads, View/Compare tabs work
-   - File upload accepts hex files
-   - Basic file info displays correctly after upload (validated against ground truth)
+1. Set up Playwright E2E scaffold for Blazor app (separate from React test file)
+2. Set up Blazor layout: Header, Footer, main content area + E2E test
+3. Implement View/Compare tab switching + E2E test
+4. Implement file upload component (drag-drop + click) + E2E test
+5. Wire up hex file parsing on upload (using Phase 1 services)
+6. Display basic file info after upload (filename, data size, segment count) + E2E test (validated against ground truth)
+7. Style with CSS to roughly match current dark theme
 
 ### Checkin 2
 - [ ] Blazor app runs, shows header/footer/tabs
