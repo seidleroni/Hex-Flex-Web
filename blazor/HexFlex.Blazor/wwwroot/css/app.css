@@ -402,6 +402,7 @@ html, body {
 .compare-upload-slot .file-info-card,
 .compare-upload-slot .upload-zone {
     flex: 1;
+    margin-top: 0;
 }
 
 .compare-upload-slot h3 {
