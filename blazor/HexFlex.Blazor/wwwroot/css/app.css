@@ -238,7 +238,9 @@ html, body {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 1rem;
+    height: 100%;
 }
 
 .upload-zone-content svg {
@@ -385,7 +387,6 @@ html, body {
     gap: 1.5rem;
     width: 100%;
     max-width: 64rem;
-    align-items: start;
 }
 
 @media (min-width: 768px) {
@@ -394,6 +395,13 @@ html, body {
 
 .compare-upload-slot {
     text-align: center;
+    display: flex;
+    flex-direction: column;
+}
+
+.compare-upload-slot .file-info-card,
+.compare-upload-slot .upload-zone {
+    flex: 1;
 }
 
 .compare-upload-slot h3 {
