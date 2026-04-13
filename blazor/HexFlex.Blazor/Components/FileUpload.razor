@@ -1,0 +1,66 @@
+@using Microsoft.AspNetCore.Components.Forms
+@implements IAsyncDisposable
+
+<div class="upload-zone" @ref="dropZoneRef"
+     role="button"
+     tabindex="0"
+     @onclick="TriggerFileInput"
+     @onkeydown="HandleKeyDown">
+    <InputFile @ref="inputFileRef" OnChange="HandleFileSelected" style="display:none" />
+    <div class="upload-zone-content">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+        </svg>
+        <p class="upload-text">
+            <span class="highlight">Click to upload</span> or drag and drop a file
+        </p>
+        <p class="upload-hint">Any file extension is welcome. We'll check the content.</p>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback<IBrowserFile> OnFileSelected { get; set; }
+
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    private ElementReference dropZoneRef;
+    private InputFile? inputFileRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && inputFileRef?.Element is not null)
+        {
+            await JS.InvokeVoidAsync("hexFlexFileUpload.initDropZone", dropZoneRef, inputFileRef.Element);
+        }
+    }
+
+    private async Task TriggerFileInput()
+    {
+        if (inputFileRef?.Element is not null)
+        {
+            await JS.InvokeVoidAsync("hexFlexFileUpload.clickElement", inputFileRef.Element);
+        }
+    }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        await OnFileSelected.InvokeAsync(e.File);
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" || e.Key == " ")
+        {
+            await TriggerFileInput();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("hexFlexFileUpload.disposeDropZone", dropZoneRef);
+        }
+        catch (JSDisconnectedException) { }
+    }
+}

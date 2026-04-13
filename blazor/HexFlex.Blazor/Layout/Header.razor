@@ -1,0 +1,32 @@
+<header class="app-header">
+    <div class="header-inner">
+        <div class="header-brand">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 21l-8-4.5v-9l8-4.5 8 4.5v9l-8 4.5z" />
+                <path stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M8.5 14.5s2.5-3 6-2" />
+                <path stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M8.5 9.5s2.5 3 6 2" />
+            </svg>
+            <div>
+                <h1 class="header-title">Hex Flex</h1>
+                <p class="header-subtitle">A web tool to view and compare Intel Hex files</p>
+            </div>
+        </div>
+        <div class="view-switcher">
+            <button class="@(ViewMode == "view" ? "active" : "")"
+                    @onclick='() => OnViewModeChanged.InvokeAsync("view")'
+                    aria-pressed="@(ViewMode == "view")">
+                View
+            </button>
+            <button class="@(ViewMode == "compare" ? "active" : "")"
+                    @onclick='() => OnViewModeChanged.InvokeAsync("compare")'
+                    aria-pressed="@(ViewMode == "compare")">
+                Compare
+            </button>
+        </div>
+    </div>
+</header>
+
+@code {
+    [Parameter] public string ViewMode { get; set; } = "view";
+    [Parameter] public EventCallback<string> OnViewModeChanged { get; set; }
+}

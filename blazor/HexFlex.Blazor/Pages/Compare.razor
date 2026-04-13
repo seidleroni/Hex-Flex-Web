@@ -1,0 +1,130 @@
+@page "/compare"
+@using HexFlex.Blazor.Services
+@using HexFlex.Blazor.Components
+@using Microsoft.AspNetCore.Components.Forms
+
+<PageTitle>Hex Flex - Compare</PageTitle>
+
+<div class="upload-section" style="max-width:64rem;">
+    <div style="margin-bottom:2rem;">
+        <h2 class="upload-heading">Compare Intel HEX Files</h2>
+        <p class="upload-subheading">Upload two Intel HEX files to compare their memory content.</p>
+    </div>
+
+    <div class="compare-upload-grid">
+        @* File A *@
+        <div class="compare-upload-slot">
+            @if (MemoryA is not null)
+            {
+                <FileInfoCard FileName="@FileNameA"
+                              StartAddress="MemoryA.GetStartAddress()"
+                              DataSize="MemoryA.GetDataSize()"
+                              SegmentCount="MemoryA.GetDataSegments().Count"
+                              OnLoadNew="ResetA" />
+            }
+            else
+            {
+                <h3>File A (Original)</h3>
+                <FileUpload OnFileSelected="HandleFileASelected" />
+                @if (ErrorA is not null)
+                {
+                    <div class="error-alert" role="alert">
+                        <strong>Error: </strong><span>@ErrorA</span>
+                    </div>
+                }
+            }
+        </div>
+
+        @* File B *@
+        <div class="compare-upload-slot">
+            @if (MemoryB is not null)
+            {
+                <FileInfoCard FileName="@FileNameB"
+                              StartAddress="MemoryB.GetStartAddress()"
+                              DataSize="MemoryB.GetDataSize()"
+                              SegmentCount="MemoryB.GetDataSegments().Count"
+                              OnLoadNew="ResetB" />
+            }
+            else
+            {
+                <h3>File B (Modified)</h3>
+                <FileUpload OnFileSelected="HandleFileBSelected" />
+                @if (ErrorB is not null)
+                {
+                    <div class="error-alert" role="alert">
+                        <strong>Error: </strong><span>@ErrorB</span>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private SparseMemory? MemoryA { get; set; }
+    private SparseMemory? MemoryB { get; set; }
+    private string FileNameA { get; set; } = "";
+    private string FileNameB { get; set; } = "";
+    private string? ErrorA { get; set; }
+    private string? ErrorB { get; set; }
+
+    private async Task HandleFileASelected(IBrowserFile file)
+    {
+        var (memory, error) = await ParseFile(file);
+        if (error is not null)
+        {
+            ErrorA = error;
+            return;
+        }
+        MemoryA = memory;
+        FileNameA = file.Name;
+        ErrorA = null;
+    }
+
+    private async Task HandleFileBSelected(IBrowserFile file)
+    {
+        var (memory, error) = await ParseFile(file);
+        if (error is not null)
+        {
+            ErrorB = error;
+            return;
+        }
+        MemoryB = memory;
+        FileNameB = file.Name;
+        ErrorB = null;
+    }
+
+    private static async Task<(SparseMemory? memory, string? error)> ParseFile(IBrowserFile file)
+    {
+        try
+        {
+            using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            using var ms = new System.IO.MemoryStream();
+            await stream.CopyToAsync(ms);
+            var content = System.Text.Encoding.UTF8.GetString(ms.ToArray());
+
+            if (!FileValidator.IsIntelHexContent(content))
+                return (null, "The file does not appear to be a valid Intel HEX file.");
+
+            return (HexParser.Parse(content), null);
+        }
+        catch (Exception ex)
+        {
+            return (null, $"Failed to parse file: {ex.Message}");
+        }
+    }
+
+    private void ResetA()
+    {
+        MemoryA = null;
+        FileNameA = "";
+        ErrorA = null;
+    }
+
+    private void ResetB()
+    {
+        MemoryB = null;
+        FileNameB = "";
+        ErrorB = null;
+    }
+}

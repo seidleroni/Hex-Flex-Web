@@ -1,0 +1,40 @@
+<div class="file-info-card">
+    <div class="file-info-header">
+        <div>
+            <h3>File Loaded</h3>
+            <p class="filename">@FileName</p>
+        </div>
+        <button class="btn-load-new" @onclick="OnLoadNew">Load New</button>
+    </div>
+    <div class="file-stats-grid">
+        <div class="stat-item">
+            <div class="stat-label">Start Address</div>
+            <div class="stat-value">0x@(StartAddress.ToString("X8"))</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">Data Size</div>
+            <div class="stat-value">@FormatDataSize(DataSize)</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">Segments</div>
+            <div class="stat-value">@SegmentCount</div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string FileName { get; set; } = "";
+    [Parameter] public long StartAddress { get; set; }
+    [Parameter] public long DataSize { get; set; }
+    [Parameter] public int SegmentCount { get; set; }
+    [Parameter] public EventCallback OnLoadNew { get; set; }
+
+    private static string FormatDataSize(long bytes)
+    {
+        if (bytes >= 1024 * 1024)
+            return $"{bytes / (1024.0 * 1024.0):F2} MB";
+        if (bytes >= 1024)
+            return $"{bytes / 1024.0:F2} KB";
+        return $"{bytes} B";
+    }
+}
