@@ -7,13 +7,13 @@
 | 0 | Setup & Ground Truth Baseline | Complete |
 | 1 | Core Services (C# Port) | Complete |
 | 2 | Blazor Shell + File Upload | Complete ✓ |
-| 3 | Single File View — Statistics & Segments | Complete |
+| 3 | Single File View — Statistics & Segments | Complete ✓ |
 | 4 | Single File View — Hex/ASCII Table | Not Started |
 | 5 | Minimap (Single File) | Not Started |
 | 6 | Compare View | Not Started |
 | 7 | Polish & Parity | Not Started |
 
-**Current phase:** Phase 3 complete — awaiting Checkin 3 approval to proceed to Phase 4.
+**Current phase:** Phase 3 complete and approved. Proceeding to Phase 4.
 
 ---
 

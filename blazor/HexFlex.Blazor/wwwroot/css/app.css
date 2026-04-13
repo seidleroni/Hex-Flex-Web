@@ -66,6 +66,8 @@ html, body {
     color: white;
     letter-spacing: -0.025em;
     line-height: 1.2;
+    user-select: none;
+    outline: none;
 }
 
 @media (min-width: 768px) {
