@@ -45,17 +45,19 @@
             <SegmentPanel Segments="Segments"
                           ActiveSegmentIndex="ActiveSegmentIndex"
                           OnSegmentClick="HandleSegmentClick" />
-            <div class="memory-view-placeholder">
-                <p>Hex viewer will be implemented in Phase 4.</p>
-            </div>
+            <HexViewer @ref="_hexViewer"
+                       Memory="Memory"
+                       ActiveSegmentIndex="ActiveSegmentIndex"
+                       OnActiveSegmentChanged="HandleActiveSegmentChanged" />
         </div>
     }
     else
     {
         <div class="memory-view-content">
-            <div class="memory-view-placeholder">
-                <p>Hex viewer will be implemented in Phase 4.</p>
-            </div>
+            <HexViewer @ref="_hexViewer"
+                       Memory="Memory"
+                       ActiveSegmentIndex="0"
+                       OnActiveSegmentChanged="HandleActiveSegmentChanged" />
         </div>
     }
 </div>
@@ -73,8 +75,9 @@
     private int ActiveSegmentIndex { get; set; }
     private string AddressInput { get; set; } = "";
     private string? InputError { get; set; }
+    private HexViewer? _hexViewer;
 
-    private void HandleGoToAddress()
+    private async Task HandleGoToAddress()
     {
         var input = AddressInput.Trim().ToLowerInvariant();
         if (input.StartsWith("0x"))
@@ -95,11 +98,14 @@
         }
 
         InputError = null;
-        // In Phase 4, this will scroll the hex viewer to the target address.
-        // For now, just validate and clear the error.
+
+        if (_hexViewer != null)
+        {
+            await _hexViewer.GoToAddress(targetAddress);
+        }
     }
 
-    private void HandleSegmentClick(long address)
+    private async Task HandleSegmentClick(long address)
     {
         // Find which segment was clicked and update active index
         for (int i = 0; i < Segments.Count; i++)
@@ -110,7 +116,17 @@
                 break;
             }
         }
-        // In Phase 4, this will also scroll the hex viewer.
+
+        if (_hexViewer != null)
+        {
+            await _hexViewer.GoToAddress(address);
+        }
+    }
+
+    private void HandleActiveSegmentChanged(int segmentIndex)
+    {
+        ActiveSegmentIndex = segmentIndex;
+        StateHasChanged();
     }
 
     private void ClearError()

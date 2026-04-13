@@ -143,7 +143,6 @@ html, body {
     margin: 0 auto;
     width: 100%;
     padding: 1rem;
-    min-height: 0;
 }
 
 /* Center upload screens vertically */
@@ -389,10 +388,6 @@ html, body {
 /* ===== Memory View ===== */
 .memory-view {
     width: 100%;
-    display: flex;
-    flex-direction: column;
-    flex-grow: 1;
-    min-height: 0;
 }
 
 .memory-view-header {
@@ -666,21 +661,166 @@ html, body {
 .memory-view-content {
     display: flex;
     flex-direction: row;
-    flex-grow: 1;
-    min-height: 0;
     gap: 1rem;
 }
 
-.memory-view-placeholder {
+/* ===== Hex Viewer ===== */
+.hex-viewer {
     flex-grow: 1;
+    background: #111827; /* gray-900 */
+    border: 1px solid #374151; /* gray-700 */
+    border-radius: 0.5rem;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.8125rem;
+    line-height: 1;
+}
+
+/* Column header row */
+.hex-viewer-header-row {
     display: flex;
     align-items: center;
+    height: 28px;
+    padding: 0 0.75rem;
+    background: rgba(31, 41, 55, 0.8); /* gray-800/80 */
+    border-bottom: 1px solid #374151;
+    color: #6b7280; /* gray-500 */
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.hex-hdr-addr {
+    width: 5.5rem;
+    flex-shrink: 0;
+}
+
+.hex-hdr-bytes {
+    flex-grow: 1;
+    white-space: pre;
+    letter-spacing: 0;
+}
+
+.hex-hdr-ascii {
+    width: 10.5rem;
+    flex-shrink: 0;
+    text-align: center;
+}
+
+@media (max-width: 768px) {
+    .hex-hdr-ascii { display: none; }
+}
+
+/* Scrollable area — height set by JS in hexViewer.js based on viewport */
+.hex-viewer-scroll {
+    overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+    height: 200px; /* default, JS overrides with actual available space */
+}
+
+.hex-viewer-scroll-content {
+    position: relative;
+    width: 100%;
+}
+
+/* Data rows */
+.hex-row {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    padding: 0 0.75rem;
+    transition: background-color 0.1s;
+}
+
+.hex-row:hover {
+    background: rgba(55, 65, 81, 0.35); /* gray-700/35 */
+}
+
+/* Address column */
+.hex-addr {
+    width: 5.5rem;
+    flex-shrink: 0;
+    color: #22d3ee; /* cyan-400 */
+    user-select: none;
+}
+
+/* Hex bytes column */
+.hex-bytes {
+    flex-grow: 1;
+    display: flex;
+    gap: 0;
+}
+
+.hex-byte {
+    width: 1.625rem;
+    text-align: center;
+    color: #d1d5db; /* gray-300 */
+    cursor: default;
+    border-radius: 2px;
+}
+
+.hex-byte-empty {
+    color: #4b5563; /* gray-600 */
+}
+
+.hex-byte-hl {
+    background: #22d3ee; /* cyan-400 */
+    color: #111827; /* gray-900 */
+    font-weight: 700;
+}
+
+/* ASCII column */
+.hex-ascii {
+    width: 10.5rem;
+    flex-shrink: 0;
+    display: flex;
+    padding-left: 0.5rem;
+    border-left: 1px solid rgba(55, 65, 81, 0.5);
+    margin-left: 0.25rem;
+}
+
+@media (max-width: 768px) {
+    .hex-ascii { display: none; }
+}
+
+.hex-asc {
+    width: 0.625rem;
+    text-align: center;
+    color: #4b5563; /* gray-600 — non-printable */
+    cursor: default;
+    border-radius: 2px;
+}
+
+.hex-asc-print {
+    color: #fde68a; /* yellow-200 */
+}
+
+/* Gap rows */
+.hex-row-gap {
     justify-content: center;
-    background: rgba(31, 41, 55, 0.3);
-    border: 1px dashed #374151;
-    border-radius: 0.5rem;
-    color: #6b7280;
-    min-height: 200px;
+    background: rgba(139, 92, 246, 0.1); /* violet-500/10 */
+    border-top: 1px dashed rgba(139, 92, 246, 0.3);
+    border-bottom: 1px dashed rgba(139, 92, 246, 0.3);
+}
+
+.hex-row-gap:hover {
+    background: rgba(139, 92, 246, 0.15);
+}
+
+.hex-gap-text {
+    color: #a78bfa; /* violet-400 */
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    user-select: none;
 }
 
 /* ===== Compare View ===== */
