@@ -24,6 +24,9 @@ dist-ssr
 !blazor/*.sln
 *.sw?
 
+# Test hex files (proprietary firmware data)
+test_files/*.hex
+
 # Test output (screenshots, fixtures, reports)
 test_output/
 
