@@ -67,27 +67,113 @@ def parse_hex_file(filepath: Path) -> dict:
 
     segments = detect_segments(ih)
 
-    # Spot-check bytes at segment boundaries and evenly spaced throughout
+    # --- Spot checks: comprehensive byte-level validation ---
+    # Categories: boundary, stride, alignment, ELA-transition, gap-edge, wrap, value-class
     spot_checks = []
-    for seg in segments:
-        # Start of segment: first 16 bytes
-        arr = ih.tobinarray(start=seg["start"], size=min(16, seg["size"]))
-        for i, val in enumerate(arr):
-            spot_checks.append({
-                "address": seg["start"] + i,
-                "address_hex": f"0x{(seg['start'] + i):08X}",
-                "value": int(val),
-            })
-        # End of segment: last 16 bytes
-        end_start = max(seg["start"], seg["end"] - 15)
-        arr = ih.tobinarray(start=end_start, size=seg["end"] - end_start + 1)
-        for i, val in enumerate(arr):
-            addr = end_start + i
+    raw_segs = ih.segments()  # raw contiguous sub-segments from intelhex
+    addr_set = set(ih.addresses())
+
+    def add_check(addr, category):
+        if addr in addr_set:
             spot_checks.append({
                 "address": addr,
                 "address_hex": f"0x{addr:08X}",
-                "value": int(val),
+                "value": ih[addr],
+                "category": category,
             })
+
+    for seg in segments:
+        # EASY: first and last 32 bytes of each logical segment
+        for offset in range(min(32, seg["size"])):
+            add_check(seg["start"] + offset, "segment_start")
+            add_check(seg["end"] - offset, "segment_end")
+
+        # MEDIUM: every 1KB stride through the segment for broad coverage
+        stride = 1024
+        addr = seg["start"]
+        while addr <= seg["end"]:
+            for offset in [0, 1, 7, 15]:  # check aligned + odd offsets at each stride
+                add_check(addr + offset, "stride_1kb")
+            addr += stride
+
+        # MEDIUM: mid-segment sample (exact midpoint + neighbors)
+        mid = (seg["start"] + seg["end"]) // 2
+        for offset in range(-8, 9):
+            add_check(mid + offset, "mid_segment")
+
+        # MEDIUM: non-16-byte-aligned addresses (odd row offsets)
+        for frac in [0.1, 0.25, 0.33, 0.5, 0.67, 0.75, 0.9]:
+            base = seg["start"] + int(seg["size"] * frac)
+            for offset in [0, 3, 5, 11, 13]:  # deliberately non-aligned
+                add_check(base + offset, "non_aligned")
+
+    # HARD: bytes right after each Extended Linear Address change
+    # ELA records set the upper 16 bits, so transitions happen at 0x____0000 boundaries
+    # Check bytes on both sides of each ELA boundary within our data
+    ela_boundaries = set()
+    for seg_start, seg_end in raw_segs:
+        # The ELA block boundary for this segment's start
+        ela_base = seg_start & 0xFFFF0000
+        ela_boundaries.add(ela_base)
+        # Also check if segment spans an ELA boundary
+        next_ela = ela_base + 0x10000
+        while next_ela < seg_end:
+            ela_boundaries.add(next_ela)
+            next_ela += 0x10000
+
+    for ela in sorted(ela_boundaries):
+        for offset in [-2, -1, 0, 1, 2, 15, 16]:
+            add_check(ela + offset, "ela_boundary")
+
+    # HARD: bytes near 0xFFFF offset within each ELA block (16-bit address wrap area)
+    for seg_start, seg_end in raw_segs:
+        ela_base = seg_start & 0xFFFF0000
+        wrap_addr = ela_base + 0xFFFF
+        if seg_start <= wrap_addr <= seg_end:
+            for offset in range(-16, 17):
+                add_check(wrap_addr + offset, "address_wrap")
+
+    # HARD: gap edges — last byte before each gap, first byte after
+    for i in range(len(raw_segs) - 1):
+        _, end_a = raw_segs[i]
+        start_b, _ = raw_segs[i + 1]
+        # end_a is exclusive in intelhex, so last byte is end_a - 1
+        for offset in range(min(16, end_a - raw_segs[i][0])):
+            add_check(end_a - 1 - offset, "pre_gap")
+        for offset in range(min(16, raw_segs[i + 1][1] - start_b)):
+            add_check(start_b + offset, "post_gap")
+
+    # MEDIUM: collect samples of specific byte values (0x00, 0xFF, other)
+    # These can trip up parsers that confuse data 0xFF with "erased"
+    found_00 = 0
+    found_ff = 0
+    for seg_start, seg_end in raw_segs:
+        size = seg_end - seg_start
+        arr = ih.tobinarray(start=seg_start, size=size)
+        for i, val in enumerate(arr):
+            addr = seg_start + i
+            if val == 0x00 and found_00 < 20:
+                add_check(addr, "value_0x00")
+                found_00 += 1
+            elif val == 0xFF and found_ff < 20:
+                add_check(addr, "value_0xFF")
+                found_ff += 1
+
+    # Deduplicate (same address may appear in multiple categories)
+    seen = {}
+    deduped = []
+    for check in spot_checks:
+        addr = check["address"]
+        if addr not in seen:
+            seen[addr] = check
+            deduped.append(check)
+        else:
+            # Merge categories
+            existing = seen[addr]
+            if check["category"] not in existing["category"]:
+                existing["category"] += "," + check["category"]
+    spot_checks = deduped
+    print(f"  {len(spot_checks)} spot-check bytes across {len(set(c['category'].split(',')[0] for c in spot_checks))} categories", flush=True)
 
     result = {
         "filename": filepath.name,
