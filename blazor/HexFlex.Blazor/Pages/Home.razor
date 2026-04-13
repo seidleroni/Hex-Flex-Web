@@ -17,11 +17,7 @@
 }
 else if (Memory is not null)
 {
-    <FileInfoCard FileName="@FileName"
-                  StartAddress="Memory.GetStartAddress()"
-                  DataSize="Memory.GetDataSize()"
-                  SegmentCount="Memory.GetDataSegments().Count"
-                  OnLoadNew="Reset" />
+    <MemoryView Memory="Memory" FileName="@FileName" OnLoadNew="Reset" />
 }
 else
 {

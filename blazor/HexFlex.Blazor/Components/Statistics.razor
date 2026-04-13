@@ -1,0 +1,29 @@
+<div class="statistics-grid">
+    <div class="stat-card">
+        <p class="stat-card-label">Start Address</p>
+        <p class="stat-card-value">0x@(StartAddress.ToString("X8"))</p>
+    </div>
+    <div class="stat-card">
+        <p class="stat-card-label">End Address</p>
+        <p class="stat-card-value">0x@(EndAddress.ToString("X8"))</p>
+    </div>
+    <div class="stat-card">
+        <p class="stat-card-label">Data Size</p>
+        <p class="stat-card-value">@FormatBytes(DataSize)</p>
+    </div>
+</div>
+
+@code {
+    [Parameter] public long StartAddress { get; set; }
+    [Parameter] public long EndAddress { get; set; }
+    [Parameter] public long DataSize { get; set; }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes == 0) return "0 Bytes";
+        string[] sizes = { "Bytes", "KB", "MB", "GB", "TB" };
+        int i = (int)Math.Floor(Math.Log(bytes) / Math.Log(1024));
+        double value = bytes / Math.Pow(1024, i);
+        return $"{value:F2} {sizes[i]}";
+    }
+}

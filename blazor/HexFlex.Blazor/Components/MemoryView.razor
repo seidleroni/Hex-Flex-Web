@@ -1,0 +1,120 @@
+@using HexFlex.Blazor.Services
+
+<div class="memory-view">
+    <div class="memory-view-header">
+        <div class="memory-view-title">
+            <h2>Memory Map</h2>
+            <p class="memory-view-filename">File: @FileName</p>
+        </div>
+
+        <form class="address-search-form" @onsubmit="HandleGoToAddress" @onsubmit:preventDefault>
+            <div class="address-input-wrapper">
+                <input type="text"
+                       @bind="AddressInput"
+                       @bind:event="oninput"
+                       @onfocus="ClearError"
+                       placeholder="Go to address (hex)"
+                       aria-label="Go to address"
+                       class="address-input @(InputError != null ? "error" : "")" />
+                @if (InputError != null)
+                {
+                    <p class="address-input-error">@InputError</p>
+                }
+            </div>
+            <button type="submit" class="btn-search" aria-label="Go to specified address">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="icon-search">
+                    <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd" />
+                </svg>
+            </button>
+            <button type="button" class="btn-load-new-action" @onclick="OnLoadNew" aria-label="Load a new HEX file">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="icon-reset">
+                    <path fill-rule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311V15a.75.75 0 01-1.5 0v-3.5a.75.75 0 01.75-.75H8.5a.75.75 0 010 1.5H7.058l.167.167a4 4 0 006.67-1.795.75.75 0 111.417.497zm.002-2.848a.75.75 0 01-.497-1.417 4 4 0 00-6.67 1.795.75.75 0 01-1.417-.497 5.5 5.5 0 019.201-2.466l.312.311V5a.75.75 0 011.5 0v3.5a.75.75 0 01-.75.75H13.5a.75.75 0 010-1.5h1.442l-.167-.167a.75.75 0 01.539-.007z" clip-rule="evenodd" />
+                </svg>
+                Load New
+            </button>
+        </form>
+    </div>
+
+    <Statistics StartAddress="StartAddress"
+               EndAddress="EndAddress"
+               DataSize="DataSize" />
+
+    @if (Segments.Count > 1)
+    {
+        <div class="memory-view-content">
+            <SegmentPanel Segments="Segments"
+                          ActiveSegmentIndex="ActiveSegmentIndex"
+                          OnSegmentClick="HandleSegmentClick" />
+            <div class="memory-view-placeholder">
+                <p>Hex viewer will be implemented in Phase 4.</p>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="memory-view-content">
+            <div class="memory-view-placeholder">
+                <p>Hex viewer will be implemented in Phase 4.</p>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public SparseMemory Memory { get; set; } = default!;
+    [Parameter] public string FileName { get; set; } = "";
+    [Parameter] public EventCallback OnLoadNew { get; set; }
+
+    private long StartAddress => Memory.GetStartAddress();
+    private long EndAddress => Memory.GetEndAddress();
+    private long DataSize => Memory.GetDataSize();
+    private List<MemorySegment> Segments => Memory.GetDataSegments();
+
+    private int ActiveSegmentIndex { get; set; }
+    private string AddressInput { get; set; } = "";
+    private string? InputError { get; set; }
+
+    private void HandleGoToAddress()
+    {
+        var input = AddressInput.Trim().ToLowerInvariant();
+        if (input.StartsWith("0x"))
+            input = input.Substring(2);
+
+        if (string.IsNullOrEmpty(input) || !System.Text.RegularExpressions.Regex.IsMatch(input, "^[0-9a-f]+$"))
+        {
+            InputError = "Invalid hex format";
+            return;
+        }
+
+        var targetAddress = Convert.ToInt64(input, 16);
+
+        if (targetAddress < StartAddress || targetAddress > EndAddress)
+        {
+            InputError = "Address out of range";
+            return;
+        }
+
+        InputError = null;
+        // In Phase 4, this will scroll the hex viewer to the target address.
+        // For now, just validate and clear the error.
+    }
+
+    private void HandleSegmentClick(long address)
+    {
+        // Find which segment was clicked and update active index
+        for (int i = 0; i < Segments.Count; i++)
+        {
+            if (Segments[i].Start == address)
+            {
+                ActiveSegmentIndex = i;
+                break;
+            }
+        }
+        // In Phase 4, this will also scroll the hex viewer.
+    }
+
+    private void ClearError()
+    {
+        InputError = null;
+    }
+}

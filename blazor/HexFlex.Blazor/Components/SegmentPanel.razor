@@ -1,0 +1,43 @@
+@using HexFlex.Blazor.Services
+
+<div class="segment-panel">
+    <h3 class="segment-panel-header">Data Segments</h3>
+    <div class="segment-panel-list">
+        <ul>
+            @for (int i = 0; i < Segments.Count; i++)
+            {
+                var index = i;
+                var segment = Segments[i];
+                var isActive = index == ActiveSegmentIndex;
+                <li>
+                    <button class="segment-button @(isActive ? "active" : "")"
+                            @onclick="() => OnSegmentClick.InvokeAsync(segment.Start)"
+                            aria-current="@(isActive ? "true" : "false")">
+                        <div class="segment-button-header">
+                            <span class="segment-name @(isActive ? "active" : "")">Segment @(index + 1)</span>
+                            <span class="segment-size-badge @(isActive ? "active" : "")">@FormatBytes(segment.Size)</span>
+                        </div>
+                        <div class="segment-address-range @(isActive ? "active" : "")">
+                            0x@(segment.Start.ToString("X8")) &rarr; 0x@(segment.End.ToString("X8"))
+                        </div>
+                    </button>
+                </li>
+            }
+        </ul>
+    </div>
+</div>
+
+@code {
+    [Parameter] public List<MemorySegment> Segments { get; set; } = new();
+    [Parameter] public int ActiveSegmentIndex { get; set; }
+    [Parameter] public EventCallback<long> OnSegmentClick { get; set; }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes == 0) return "0 Bytes";
+        string[] sizes = { "Bytes", "KB", "MB", "GB", "TB" };
+        int i = (int)Math.Floor(Math.Log(bytes) / Math.Log(1024));
+        double value = bytes / Math.Pow(1024, i);
+        return $"{value:F2} {sizes[i]}";
+    }
+}
