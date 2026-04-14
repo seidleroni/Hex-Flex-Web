@@ -69,13 +69,23 @@ public static class CliExporter
 
         var result = MemoryComparer.Compare(memoryA, memoryB);
 
-        long unchanged = result.DiffMap.Values.Count(d => d.Type == DiffType.Unchanged);
+        result.GetDiffArrays(out var diffTypes, out _, out _, out var validity);
+        long totalAddresses = 0;
+        long unchanged = 0;
+        for (int i = 0; i < validity.Length; i++)
+        {
+            if (validity[i] != 0)
+            {
+                totalAddresses++;
+                if (diffTypes[i] == (byte)DiffType.Unchanged) unchanged++;
+            }
+        }
 
         var output = new
         {
             file_a = Path.GetFileName(hexFileA),
             file_b = Path.GetFileName(hexFileB),
-            total_addresses = result.DiffMap.Count,
+            total_addresses = totalAddresses,
             unchanged,
             modified = result.Stats.Modified,
             added = result.Stats.Added,

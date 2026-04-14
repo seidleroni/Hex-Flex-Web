@@ -224,12 +224,12 @@ else
             Console.WriteLine($"[PERF] Compare.GetSegments+DiffAddrs: {sw.ElapsedMilliseconds}ms ({_segments.Count} segments, {_diffAddresses.Count} diffs)");
 
             sw.Restart();
-            _comparison.ExtractDiffArrays(out var dt, out var ba, out var bb, out var v, out _);
+            _comparison.GetDiffArrays(out var dt, out var ba, out var bb, out var v);
             _diffTypes = dt;
             _bytesA = ba;
             _bytesB = bb;
             _validity = v;
-            Console.WriteLine($"[PERF] Compare.ExtractDiffArrays: {sw.ElapsedMilliseconds}ms ({_diffTypes.Length} bytes)");
+            Console.WriteLine($"[PERF] Compare.GetDiffArrays: {sw.ElapsedMilliseconds}ms ({_diffTypes.Length} bytes)");
 
             sw.Restart();
             PackVirtualRows(_comparison.GetVirtualRows(), out _vrAddressBytes, out _vrFlags, out _gapDataBytes);

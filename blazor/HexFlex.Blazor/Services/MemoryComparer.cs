@@ -34,37 +34,36 @@ public class ComparisonResult
     private const int BytesPerRow = 16;
     private const int SegmentGapThreshold = 1024; // 1KB
 
-    private readonly Dictionary<long, DiffEntry> _diffMap;
-    private readonly DiffEntry _defaultEntry = new(DiffType.Unchanged, null, null);
-
-    // Pre-built during construction — no lazy LINQ needed
+    // Pre-built during construction
     private readonly List<ComparisonVirtualRow> _virtualRows;
     private readonly List<long> _diffAddresses;
     private readonly List<ComparisonSegment> _segments;
+
+    // Flat arrays built during construction (no dictionary needed)
+    private readonly byte[] _diffTypes;
+    private readonly byte[] _bytesA;
+    private readonly byte[] _bytesB;
+    private readonly byte[] _validity;
 
     public DiffStats Stats { get; }
 
     public ComparisonResult(SparseMemory memoryA, SparseMemory memoryB)
     {
-        long modified = 0, added = 0, removed = 0;
-
         var blocksA = memoryA.MemoryBlocks;
         var blocksB = memoryB.MemoryBlocks;
         int blockSize = memoryA.BlockSize;
 
-        // Collect and SORT block keys so addresses come out in order
+        // Collect and sort block keys
         var allBlockKeys = new HashSet<long>(blocksA.Keys);
         allBlockKeys.UnionWith(blocksB.Keys);
         var sortedBlockKeys = new List<long>(allBlockKeys);
         sortedBlockKeys.Sort();
 
-        // Pre-size the dictionary to avoid rehashing
-        _diffMap = new Dictionary<long, DiffEntry>(sortedBlockKeys.Count * 16);
-
-        // Collect row-aligned addresses and diff addresses in order during the pass
+        // --- Pass 1: collect row addresses and diff addresses ---
         var rowAddressSet = new HashSet<long>();
         var rowAddressList = new List<long>();
         var diffAddrs = new List<long>();
+        long modified = 0, added = 0, removed = 0;
 
         foreach (var blockKey in sortedBlockKeys)
         {
@@ -80,49 +79,83 @@ public class ComparisonResult
                     continue;
 
                 long addr = blockKey + offset;
-                DiffType type;
 
-                if (byteA == byteB)
-                {
-                    type = DiffType.Unchanged;
-                }
-                else if (byteA is null)
-                {
-                    type = DiffType.Added;
-                    added++;
-                }
-                else if (byteB is null)
-                {
-                    type = DiffType.Removed;
-                    removed++;
-                }
-                else
-                {
-                    type = DiffType.Modified;
-                    modified++;
-                }
-
-                _diffMap[addr] = new DiffEntry(type, byteA, byteB);
-
-                // Track row addresses (already in sorted order since blocks are sorted)
+                // Track row address
                 long rowAddr = (addr / BytesPerRow) * BytesPerRow;
                 if (rowAddressSet.Add(rowAddr))
                     rowAddressList.Add(rowAddr);
 
-                // Track diff addresses
-                if (type != DiffType.Unchanged)
+                // Track diff addresses and stats
+                if (byteA != byteB)
+                {
+                    if (byteA is null) added++;
+                    else if (byteB is null) removed++;
+                    else modified++;
                     diffAddrs.Add(addr);
+                }
             }
         }
 
         Stats = new DiffStats(modified, added, removed);
-        _diffAddresses = diffAddrs; // Already sorted (blocks iterated in order)
+        _diffAddresses = diffAddrs;
 
-        // Build virtual rows — rowAddressList is already sorted
+        // Build virtual rows
         _virtualRows = BuildVirtualRows(rowAddressList);
-
-        // Build segments from virtual rows
         _segments = BuildSegments(_virtualRows);
+
+        // --- Build rowAddress → dataRowIndex map for pass 2 ---
+        var rowIndexMap = new Dictionary<long, int>(rowAddressList.Count);
+        int dataRowIdx = 0;
+        foreach (var vr in _virtualRows)
+        {
+            if (!vr.IsGap)
+            {
+                rowIndexMap[vr.Address] = dataRowIdx;
+                dataRowIdx++;
+            }
+        }
+
+        // --- Pass 2: fill flat arrays directly (no diffMap dictionary) ---
+        int totalBytes = dataRowIdx * BytesPerRow;
+        _diffTypes = new byte[totalBytes];
+        _bytesA = new byte[totalBytes];
+        _bytesB = new byte[totalBytes];
+        _validity = new byte[totalBytes];
+
+        foreach (var blockKey in sortedBlockKeys)
+        {
+            blocksA.TryGetValue(blockKey, out var blockA);
+            blocksB.TryGetValue(blockKey, out var blockB);
+
+            for (int offset = 0; offset < blockSize; offset++)
+            {
+                var byteA = blockA?[offset];
+                var byteB = blockB?[offset];
+
+                if (byteA is null && byteB is null)
+                    continue;
+
+                long addr = blockKey + offset;
+                long rowAddr = (addr / BytesPerRow) * BytesPerRow;
+                int colOffset = (int)(addr - rowAddr);
+
+                if (!rowIndexMap.TryGetValue(rowAddr, out int rowIdx))
+                    continue;
+
+                int flatIdx = rowIdx * BytesPerRow + colOffset;
+
+                DiffType type;
+                if (byteA == byteB) type = DiffType.Unchanged;
+                else if (byteA is null) type = DiffType.Added;
+                else if (byteB is null) type = DiffType.Removed;
+                else type = DiffType.Modified;
+
+                _diffTypes[flatIdx] = (byte)type;
+                _bytesA[flatIdx] = byteA ?? 0;
+                _bytesB[flatIdx] = byteB ?? (byteA ?? 0);
+                _validity[flatIdx] = 1;
+            }
+        }
     }
 
     private static List<ComparisonVirtualRow> BuildVirtualRows(List<long> sortedRowAddresses)
@@ -201,11 +234,6 @@ public class ComparisonResult
         return segments;
     }
 
-    public DiffEntry GetDiffEntry(long address) =>
-        _diffMap.TryGetValue(address, out var entry) ? entry : _defaultEntry;
-
-    public IReadOnlyDictionary<long, DiffEntry> DiffMap => _diffMap;
-
     public List<long> GetDiffAddresses() => _diffAddresses;
 
     public List<ComparisonVirtualRow> GetVirtualRows() => _virtualRows;
@@ -213,44 +241,15 @@ public class ComparisonResult
     public List<ComparisonSegment> GetDataSegments() => _segments;
 
     /// <summary>
-    /// Bulk-extract diff data for all data rows into flat arrays.
-    /// Call once, share between ComparisonHexViewer and ComparisonMinimap.
+    /// Returns pre-built flat arrays. No extraction needed — built during construction.
     /// </summary>
-    public void ExtractDiffArrays(
-        out byte[] diffTypes, out byte[] bytesA, out byte[] bytesB, out byte[] validity,
-        out int dataRowCount)
+    public void GetDiffArrays(
+        out byte[] diffTypes, out byte[] bytesA, out byte[] bytesB, out byte[] validity)
     {
-        dataRowCount = 0;
-        foreach (var vr in _virtualRows)
-        {
-            if (!vr.IsGap) dataRowCount++;
-        }
-
-        int totalBytes = dataRowCount * BytesPerRow;
-        diffTypes = new byte[totalBytes];
-        bytesA = new byte[totalBytes];
-        bytesB = new byte[totalBytes];
-        validity = new byte[totalBytes];
-
-        int dataIdx = 0;
-        foreach (var vr in _virtualRows)
-        {
-            if (vr.IsGap) continue;
-
-            int baseOffset = dataIdx * BytesPerRow;
-            for (int j = 0; j < BytesPerRow; j++)
-            {
-                long addr = vr.Address + j;
-                if (_diffMap.TryGetValue(addr, out var entry))
-                {
-                    diffTypes[baseOffset + j] = (byte)entry.Type;
-                    bytesA[baseOffset + j] = entry.ByteA ?? 0;
-                    bytesB[baseOffset + j] = entry.ByteB ?? (entry.ByteA ?? 0);
-                    validity[baseOffset + j] = 1;
-                }
-            }
-            dataIdx++;
-        }
+        diffTypes = _diffTypes;
+        bytesA = _bytesA;
+        bytesB = _bytesB;
+        validity = _validity;
     }
 }
 
