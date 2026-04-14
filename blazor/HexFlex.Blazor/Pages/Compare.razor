@@ -97,11 +97,20 @@ else
             }
             <ComparisonHexViewer @ref="_compHexViewer"
                                  Comparison="_comparison"
+                                 DiffTypes="_diffTypes"
+                                 BytesA="_bytesA"
+                                 BytesB="_bytesB"
+                                 Validity="_validity"
+                                 VirtualRowsJson="@_virtualRowsJson"
                                  ActiveSegmentIndex="_activeSegmentIndex"
                                  OnActiveSegmentChanged="HandleActiveSegmentChanged" />
             @if (_compHexViewer != null)
             {
                 <ComparisonMinimap Comparison="_comparison"
+                                   DiffTypes="_diffTypes"
+                                   BytesA="_bytesA"
+                                   Validity="_validity"
+                                   VirtualRowsJson="@_virtualRowsJson"
                                    ScrollContainerId="@_compHexViewer.ScrollContainerId" />
             }
             @if (_diffAddresses.Count > 0)
@@ -138,6 +147,13 @@ else
     private int _highlightedDiffIndex = -1;
     private ComparisonHexViewer? _compHexViewer;
     private bool _needsMinimapRender;
+
+    // Pre-extracted diff data (shared between CompHexViewer and CompMinimap)
+    private byte[] _diffTypes = Array.Empty<byte>();
+    private byte[] _bytesA = Array.Empty<byte>();
+    private byte[] _bytesB = Array.Empty<byte>();
+    private byte[] _validity = Array.Empty<byte>();
+    private string _virtualRowsJson = "[]";
 
     private bool _isPrevDisabled => _highlightedDiffIndex == 0;
     private bool _isNextDisabled => _highlightedDiffIndex != -1 && _highlightedDiffIndex == _diffAddresses.Count - 1;
@@ -189,16 +205,62 @@ else
     {
         if (MemoryA is not null && MemoryB is not null)
         {
+            var totalSw = System.Diagnostics.Stopwatch.StartNew();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             _comparison = MemoryComparer.Compare(MemoryA, MemoryB);
+            Console.WriteLine($"[PERF] Compare.MemoryComparer.Compare: {sw.ElapsedMilliseconds}ms");
+
+            sw.Restart();
             _segments = _comparison.GetDataSegments();
             _diffAddresses = _comparison.GetDiffAddresses();
+            Console.WriteLine($"[PERF] Compare.GetSegments+DiffAddrs: {sw.ElapsedMilliseconds}ms ({_segments.Count} segments, {_diffAddresses.Count} diffs)");
+
+            sw.Restart();
+            _comparison.ExtractDiffArrays(out var dt, out var ba, out var bb, out var v, out _);
+            _diffTypes = dt;
+            _bytesA = ba;
+            _bytesB = bb;
+            _validity = v;
+            Console.WriteLine($"[PERF] Compare.ExtractDiffArrays: {sw.ElapsedMilliseconds}ms ({_diffTypes.Length} bytes)");
+
+            sw.Restart();
+            _virtualRowsJson = SerializeVirtualRows(_comparison.GetVirtualRows());
+            Console.WriteLine($"[PERF] Compare.SerializeVirtualRows: {sw.ElapsedMilliseconds}ms ({_virtualRowsJson.Length} chars)");
+
             _highlightedDiffIndex = -1;
             _activeSegmentIndex = 0;
             _needsMinimapRender = true;
 
             // Map ComparisonSegment to MemorySegment for SegmentPanel compatibility
             _compSegmentsMapped = _segments.Select(s => new MemorySegment(s.Start, s.End)).ToList();
+            Console.WriteLine($"[PERF] Compare.TryCompare total: {totalSw.ElapsedMilliseconds}ms");
         }
+    }
+
+    private static string SerializeVirtualRows(List<ComparisonVirtualRow> rows)
+    {
+        var sb = new System.Text.StringBuilder(rows.Count * 40);
+        sb.Append('[');
+        for (int i = 0; i < rows.Count; i++)
+        {
+            if (i > 0) sb.Append(',');
+            var vr = rows[i];
+            sb.Append("{\"isGap\":").Append(vr.IsGap ? "true" : "false");
+            sb.Append(",\"segmentIndex\":").Append(vr.SegmentIndex);
+            if (vr.IsGap)
+            {
+                sb.Append(",\"gapStartAddr\":").Append(vr.GapStartAddr);
+                sb.Append(",\"gapEndAddr\":").Append(vr.GapEndAddr);
+                sb.Append(",\"skippedBytes\":").Append(vr.SkippedBytes);
+            }
+            else
+            {
+                sb.Append(",\"address\":").Append(vr.Address);
+            }
+            sb.Append('}');
+        }
+        sb.Append(']');
+        return sb.ToString();
     }
 
     private static async Task<(SparseMemory? memory, string? error)> ParseFile(IBrowserFile file)

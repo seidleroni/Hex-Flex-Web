@@ -34,11 +34,13 @@ public class ComparisonResult
     private const int BytesPerRow = 16;
     private const int SegmentGapThreshold = 1024; // 1KB
 
-    private readonly Dictionary<long, DiffEntry> _diffMap = new();
+    private readonly Dictionary<long, DiffEntry> _diffMap;
     private readonly DiffEntry _defaultEntry = new(DiffType.Unchanged, null, null);
-    private List<ComparisonVirtualRow>? _virtualRows;
-    private List<long>? _diffAddresses;
-    private List<ComparisonSegment>? _segments;
+
+    // Pre-built during construction — no lazy LINQ needed
+    private readonly List<ComparisonVirtualRow> _virtualRows;
+    private readonly List<long> _diffAddresses;
+    private readonly List<ComparisonSegment> _segments;
 
     public DiffStats Stats { get; }
 
@@ -48,12 +50,23 @@ public class ComparisonResult
 
         var blocksA = memoryA.MemoryBlocks;
         var blocksB = memoryB.MemoryBlocks;
-        var allBlockKeys = new HashSet<long>(blocksA.Keys);
-        allBlockKeys.UnionWith(blocksB.Keys);
-
         int blockSize = memoryA.BlockSize;
 
-        foreach (var blockKey in allBlockKeys)
+        // Collect and SORT block keys so addresses come out in order
+        var allBlockKeys = new HashSet<long>(blocksA.Keys);
+        allBlockKeys.UnionWith(blocksB.Keys);
+        var sortedBlockKeys = new List<long>(allBlockKeys);
+        sortedBlockKeys.Sort();
+
+        // Pre-size the dictionary to avoid rehashing
+        _diffMap = new Dictionary<long, DiffEntry>(sortedBlockKeys.Count * 16);
+
+        // Collect row-aligned addresses and diff addresses in order during the pass
+        var rowAddressSet = new HashSet<long>();
+        var rowAddressList = new List<long>();
+        var diffAddrs = new List<long>();
+
+        foreach (var blockKey in sortedBlockKeys)
         {
             blocksA.TryGetValue(blockKey, out var blockA);
             blocksB.TryGetValue(blockKey, out var blockB);
@@ -90,71 +103,52 @@ public class ComparisonResult
                 }
 
                 _diffMap[addr] = new DiffEntry(type, byteA, byteB);
+
+                // Track row addresses (already in sorted order since blocks are sorted)
+                long rowAddr = (addr / BytesPerRow) * BytesPerRow;
+                if (rowAddressSet.Add(rowAddr))
+                    rowAddressList.Add(rowAddr);
+
+                // Track diff addresses
+                if (type != DiffType.Unchanged)
+                    diffAddrs.Add(addr);
             }
         }
 
         Stats = new DiffStats(modified, added, removed);
+        _diffAddresses = diffAddrs; // Already sorted (blocks iterated in order)
+
+        // Build virtual rows — rowAddressList is already sorted
+        _virtualRows = BuildVirtualRows(rowAddressList);
+
+        // Build segments from virtual rows
+        _segments = BuildSegments(_virtualRows);
     }
 
-    public DiffEntry GetDiffEntry(long address) =>
-        _diffMap.TryGetValue(address, out var entry) ? entry : _defaultEntry;
-
-    public IReadOnlyDictionary<long, DiffEntry> DiffMap => _diffMap;
-
-    public List<long> GetDiffAddresses()
+    private static List<ComparisonVirtualRow> BuildVirtualRows(List<long> sortedRowAddresses)
     {
-        if (_diffAddresses is null)
-        {
-            _diffAddresses = _diffMap
-                .Where(kvp => kvp.Value.Type != DiffType.Unchanged)
-                .Select(kvp => kvp.Key)
-                .OrderBy(a => a)
-                .ToList();
-        }
-        return _diffAddresses;
-    }
-
-    public List<ComparisonVirtualRow> GetVirtualRows()
-    {
-        if (_virtualRows is not null)
-            return _virtualRows;
-
-        _virtualRows = new List<ComparisonVirtualRow>();
-
-        var addressesWithData = _diffMap.Keys.OrderBy(a => a).ToList();
-        if (addressesWithData.Count == 0)
-            return _virtualRows;
-
-        // Get unique row-aligned addresses
-        var sortedRowAddresses = addressesWithData
-            .Select(addr => AlignDown(addr))
-            .Distinct()
-            .OrderBy(a => a)
-            .ToList();
-
+        var virtualRows = new List<ComparisonVirtualRow>();
         if (sortedRowAddresses.Count == 0)
-            return _virtualRows;
+            return virtualRows;
 
         int segmentIndex = 0;
         long lastRowAddress = sortedRowAddresses[0];
-        _virtualRows.Add(new ComparisonVirtualRow { Address = lastRowAddress, SegmentIndex = segmentIndex });
+        virtualRows.Add(new ComparisonVirtualRow { Address = lastRowAddress, SegmentIndex = segmentIndex });
 
         for (int i = 1; i < sortedRowAddresses.Count; i++)
         {
             long currentRowAddress = sortedRowAddresses[i];
             long gap = currentRowAddress - lastRowAddress;
 
-            // New segment if gap >= 1KB
             if (gap >= SegmentGapThreshold)
                 segmentIndex++;
 
-            // Visual gap row for any non-contiguous data rows
             if (gap > BytesPerRow)
             {
                 long skippedBytes = gap - BytesPerRow;
                 long gapStart = lastRowAddress + BytesPerRow;
                 long gapEnd = currentRowAddress - 1;
-                _virtualRows.Add(new ComparisonVirtualRow
+                virtualRows.Add(new ComparisonVirtualRow
                 {
                     IsGap = true,
                     SegmentIndex = segmentIndex,
@@ -164,22 +158,18 @@ public class ComparisonResult
                 });
             }
 
-            _virtualRows.Add(new ComparisonVirtualRow { Address = currentRowAddress, SegmentIndex = segmentIndex });
+            virtualRows.Add(new ComparisonVirtualRow { Address = currentRowAddress, SegmentIndex = segmentIndex });
             lastRowAddress = currentRowAddress;
         }
 
-        return _virtualRows;
+        return virtualRows;
     }
 
-    public List<ComparisonSegment> GetDataSegments()
+    private static List<ComparisonSegment> BuildSegments(List<ComparisonVirtualRow> virtualRows)
     {
-        if (_segments is not null)
-            return _segments;
-
-        _segments = new List<ComparisonSegment>();
-        var virtualRows = GetVirtualRows();
+        var segments = new List<ComparisonSegment>();
         if (virtualRows.Count == 0)
-            return _segments;
+            return segments;
 
         var segmentsMap = new Dictionary<int, (long start, long end)>();
 
@@ -200,7 +190,7 @@ public class ComparisonResult
         foreach (var kvp in segmentsMap.OrderBy(k => k.Key))
         {
             long endAddress = kvp.Value.end + BytesPerRow - 1;
-            _segments.Add(new ComparisonSegment
+            segments.Add(new ComparisonSegment
             {
                 Start = kvp.Value.start,
                 End = endAddress,
@@ -208,10 +198,60 @@ public class ComparisonResult
             });
         }
 
-        return _segments;
+        return segments;
     }
 
-    private static long AlignDown(long address) => (address / BytesPerRow) * BytesPerRow;
+    public DiffEntry GetDiffEntry(long address) =>
+        _diffMap.TryGetValue(address, out var entry) ? entry : _defaultEntry;
+
+    public IReadOnlyDictionary<long, DiffEntry> DiffMap => _diffMap;
+
+    public List<long> GetDiffAddresses() => _diffAddresses;
+
+    public List<ComparisonVirtualRow> GetVirtualRows() => _virtualRows;
+
+    public List<ComparisonSegment> GetDataSegments() => _segments;
+
+    /// <summary>
+    /// Bulk-extract diff data for all data rows into flat arrays.
+    /// Call once, share between ComparisonHexViewer and ComparisonMinimap.
+    /// </summary>
+    public void ExtractDiffArrays(
+        out byte[] diffTypes, out byte[] bytesA, out byte[] bytesB, out byte[] validity,
+        out int dataRowCount)
+    {
+        dataRowCount = 0;
+        foreach (var vr in _virtualRows)
+        {
+            if (!vr.IsGap) dataRowCount++;
+        }
+
+        int totalBytes = dataRowCount * BytesPerRow;
+        diffTypes = new byte[totalBytes];
+        bytesA = new byte[totalBytes];
+        bytesB = new byte[totalBytes];
+        validity = new byte[totalBytes];
+
+        int dataIdx = 0;
+        foreach (var vr in _virtualRows)
+        {
+            if (vr.IsGap) continue;
+
+            int baseOffset = dataIdx * BytesPerRow;
+            for (int j = 0; j < BytesPerRow; j++)
+            {
+                long addr = vr.Address + j;
+                if (_diffMap.TryGetValue(addr, out var entry))
+                {
+                    diffTypes[baseOffset + j] = (byte)entry.Type;
+                    bytesA[baseOffset + j] = entry.ByteA ?? 0;
+                    bytesB[baseOffset + j] = entry.ByteB ?? (entry.ByteA ?? 0);
+                    validity[baseOffset + j] = 1;
+                }
+            }
+            dataIdx++;
+        }
+    }
 }
 
 public static class MemoryComparer

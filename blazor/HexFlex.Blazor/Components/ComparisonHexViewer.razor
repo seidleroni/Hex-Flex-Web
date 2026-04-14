@@ -24,6 +24,11 @@
     private static readonly int[] _byteOffsets = Enumerable.Range(0, BytesPerRow).ToArray();
 
     [Parameter] public ComparisonResult Comparison { get; set; } = default!;
+    [Parameter] public byte[] DiffTypes { get; set; } = Array.Empty<byte>();
+    [Parameter] public byte[] BytesA { get; set; } = Array.Empty<byte>();
+    [Parameter] public byte[] BytesB { get; set; } = Array.Empty<byte>();
+    [Parameter] public byte[] Validity { get; set; } = Array.Empty<byte>();
+    [Parameter] public string VirtualRowsJson { get; set; } = "[]";
     [Parameter] public EventCallback<int> OnActiveSegmentChanged { get; set; }
     [Parameter] public int ActiveSegmentIndex { get; set; }
 
@@ -33,7 +38,7 @@
     public string ScrollContainerId => _scrollElementId;
     private DotNetObjectReference<ComparisonHexViewer>? _dotNetRef;
     private bool _jsInitialized;
-    private ComparisonResult? _lastComparison;
+    private byte[]? _lastDiffTypes;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -43,9 +48,9 @@
             await JS.InvokeVoidAsync("hexFlexComparisonHexViewer.init", _scrollElementId, _dotNetRef);
             _jsInitialized = true;
 
-            if (Comparison != null && Comparison != _lastComparison)
+            if (HasValidData() && DiffTypes != _lastDiffTypes)
             {
-                _lastComparison = Comparison;
+                _lastDiffTypes = DiffTypes;
                 await SendDataToJs();
             }
         }
@@ -53,82 +58,21 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (Comparison != null && Comparison != _lastComparison && _jsInitialized)
+        if (HasValidData() && DiffTypes != _lastDiffTypes && _jsInitialized)
         {
-            _lastComparison = Comparison;
+            _lastDiffTypes = DiffTypes;
             await SendDataToJs();
         }
     }
 
+    private bool HasValidData() => DiffTypes.Length > 0 && VirtualRowsJson.Length > 2;
+
     private async Task SendDataToJs()
     {
-        var virtualRows = Comparison.GetVirtualRows();
-        if (virtualRows.Count == 0) return;
-
-        // Count data rows for array sizing
-        int dataRowCount = 0;
-        foreach (var vr in virtualRows)
-        {
-            if (!vr.IsGap) dataRowCount++;
-        }
-
-        // Build flat arrays: 16 bytes per data row
-        int totalBytes = dataRowCount * BytesPerRow;
-        var diffTypes = new byte[totalBytes];
-        var bytesB = new byte[totalBytes];
-        var bytesA = new byte[totalBytes];
-        var validity = new byte[totalBytes];
-
-        int dataIdx = 0;
-        foreach (var vr in virtualRows)
-        {
-            if (vr.IsGap) continue;
-
-            int baseOffset = dataIdx * BytesPerRow;
-            for (int j = 0; j < BytesPerRow; j++)
-            {
-                long addr = vr.Address + j;
-                var entry = Comparison.GetDiffEntry(addr);
-
-                diffTypes[baseOffset + j] = (byte)entry.Type;
-                bytesA[baseOffset + j] = entry.ByteA ?? 0;
-                bytesB[baseOffset + j] = entry.ByteB ?? (entry.ByteA ?? 0);
-                validity[baseOffset + j] = (byte)((entry.ByteA is not null || entry.ByteB is not null) ? 1 : 0);
-            }
-            dataIdx++;
-        }
-
-        // Serialize virtual rows as JSON
-        var vrJson = SerializeVirtualRows(virtualRows);
-
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         await JS.InvokeVoidAsync("hexFlexComparisonHexViewer.setData",
-            _scrollElementId, vrJson, diffTypes, bytesB, bytesA, validity);
-    }
-
-    private static string SerializeVirtualRows(List<ComparisonVirtualRow> rows)
-    {
-        var sb = new System.Text.StringBuilder(256);
-        sb.Append('[');
-        for (int i = 0; i < rows.Count; i++)
-        {
-            if (i > 0) sb.Append(',');
-            var vr = rows[i];
-            sb.Append("{\"isGap\":").Append(vr.IsGap ? "true" : "false");
-            sb.Append(",\"segmentIndex\":").Append(vr.SegmentIndex);
-            if (vr.IsGap)
-            {
-                sb.Append(",\"gapStartAddr\":").Append(vr.GapStartAddr);
-                sb.Append(",\"gapEndAddr\":").Append(vr.GapEndAddr);
-                sb.Append(",\"skippedBytes\":").Append(vr.SkippedBytes);
-            }
-            else
-            {
-                sb.Append(",\"address\":").Append(vr.Address);
-            }
-            sb.Append('}');
-        }
-        sb.Append(']');
-        return sb.ToString();
+            _scrollElementId, VirtualRowsJson, DiffTypes, BytesB, BytesA, Validity);
+        Console.WriteLine($"[PERF] CompHexViewer.JS.setData interop: {sw.ElapsedMilliseconds}ms");
     }
 
     [JSInvokable]
