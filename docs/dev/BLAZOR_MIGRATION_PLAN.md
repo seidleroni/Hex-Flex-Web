@@ -9,11 +9,11 @@
 | 2 | Blazor Shell + File Upload | Complete ✓ |
 | 3 | Single File View — Statistics & Segments | Complete ✓ |
 | 4 | Single File View — Hex/ASCII Table | Complete ✓ |
-| 5 | Minimap (Single File) | Not Started |
+| 5 | Minimap (Single File) | Complete ✓ |
 | 6 | Compare View | Not Started |
 | 7 | Polish & Parity | Not Started |
 
-**Current phase:** Phase 4 approved. Proceeding to Phase 5.
+**Current phase:** Phase 5 complete. Awaiting checkin approval.
 
 ---
 
