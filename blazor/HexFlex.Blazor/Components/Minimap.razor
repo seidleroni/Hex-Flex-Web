@@ -7,12 +7,14 @@
 </div>
 
 @code {
-    [Parameter] public SparseMemory Memory { get; set; } = default!;
+    [Parameter] public List<MemorySegment> Segments { get; set; } = new();
+    [Parameter] public byte[][] SegmentDataArrays { get; set; } = Array.Empty<byte[]>();
+    [Parameter] public byte[][] SegmentValidityArrays { get; set; } = Array.Empty<byte[]>();
     [Parameter] public string ScrollContainerId { get; set; } = "";
 
     private string _canvasId = $"minimap-canvas-{Guid.NewGuid():N}";
     private bool _jsInitialized;
-    private SparseMemory? _lastMemory;
+    private byte[][]? _lastDataArrays;
 
     private const int BytesPerRow = Constants.BytesPerRow;
 
@@ -23,9 +25,9 @@
             await JS.InvokeVoidAsync("hexFlexMinimap.init", _canvasId, ScrollContainerId);
             _jsInitialized = true;
 
-            if (Memory != null && Memory != _lastMemory)
+            if (SegmentDataArrays.Length > 0 && SegmentDataArrays != _lastDataArrays)
             {
-                _lastMemory = Memory;
+                _lastDataArrays = SegmentDataArrays;
                 await SendDataToJs();
             }
         }
@@ -33,71 +35,48 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (Memory != null && Memory != _lastMemory && _jsInitialized)
+        if (SegmentDataArrays.Length > 0 && SegmentDataArrays != _lastDataArrays && _jsInitialized)
         {
-            _lastMemory = Memory;
+            _lastDataArrays = SegmentDataArrays;
             await SendDataToJs();
         }
     }
 
     private async Task SendDataToJs()
     {
-        var segments = Memory.GetDataSegments();
-        var layout = BuildLayout(segments);
+        var totalSw = System.Diagnostics.Stopwatch.StartNew();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var layout = BuildLayout();
+        Console.WriteLine($"[PERF] Minimap.BuildLayout: {sw.ElapsedMilliseconds}ms");
 
+        sw.Restart();
         var layoutJson = SerializeLayout(layout.entries, layout.totalRowCount);
+        Console.WriteLine($"[PERF] Minimap.SerializeLayout: {sw.ElapsedMilliseconds}ms");
 
-        // Extract byte data per segment (same as HexViewer)
-        var segmentDataArrays = new byte[segments.Count][];
-        var segmentValidityArrays = new byte[segments.Count][];
-
-        for (int segIdx = 0; segIdx < segments.Count; segIdx++)
-        {
-            var seg = segments[segIdx];
-            long alignedStart = AlignDown(seg.Start);
-            long alignedEnd = AlignDown(seg.End);
-            int rowCount = (int)((alignedEnd - alignedStart) / BytesPerRow) + 1;
-            int byteCount = rowCount * BytesPerRow;
-
-            var data = new byte[byteCount];
-            var validity = new byte[byteCount];
-
-            for (int i = 0; i < byteCount; i++)
-            {
-                long addr = alignedStart + i;
-                var b = Memory.GetByte(addr);
-                if (b.HasValue)
-                {
-                    data[i] = b.Value;
-                    validity[i] = 1;
-                }
-            }
-
-            segmentDataArrays[segIdx] = data;
-            segmentValidityArrays[segIdx] = validity;
-        }
-
+        sw.Restart();
         await JS.InvokeVoidAsync("hexFlexMinimap.setData",
-            _canvasId, layoutJson, segmentDataArrays, segmentValidityArrays);
+            _canvasId, layoutJson, SegmentDataArrays, SegmentValidityArrays);
+        Console.WriteLine($"[PERF] Minimap.JS.setData interop: {sw.ElapsedMilliseconds}ms");
+        Console.WriteLine($"[PERF] Minimap.SendDataToJs total: {totalSw.ElapsedMilliseconds}ms");
     }
 
     private const long ViewGapThreshold = Constants.ViewGapThreshold;
 
-    private (List<LayoutEntry> entries, int totalRowCount) BuildLayout(List<MemorySegment> segments)
+    private (List<LayoutEntry> entries, int totalRowCount) BuildLayout()
     {
-        if (segments.Count == 0)
+        if (Segments.Count == 0)
             return (new List<LayoutEntry>(), 0);
 
         var entries = new List<LayoutEntry>();
         int runningRow = 0;
 
-        for (int segIdx = 0; segIdx < segments.Count; segIdx++)
+        for (int segIdx = 0; segIdx < Segments.Count; segIdx++)
         {
-            var seg = segments[segIdx];
+            var seg = Segments[segIdx];
 
             if (segIdx > 0)
             {
-                var prev = segments[segIdx - 1];
+                var prev = Segments[segIdx - 1];
                 long gapStartAddr = prev.End + 1;
                 long gapEndAddr = seg.Start - 1;
                 long gapSize = gapEndAddr - gapStartAddr + 1;

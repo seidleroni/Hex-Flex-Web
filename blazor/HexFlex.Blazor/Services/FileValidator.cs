@@ -8,16 +8,27 @@ public static class FileValidator
     /// </summary>
     public static bool IsIntelHexContent(string content)
     {
-        var lines = content.Split('\n');
-        int checked_ = 0;
+        if (string.IsNullOrEmpty(content)) return false;
 
-        foreach (var rawLine in lines)
+        int checked_ = 0;
+        int pos = 0;
+        int len = content.Length;
+
+        while (pos < len && checked_ < Constants.ValidatorSampleLines)
         {
-            var line = rawLine.TrimEnd('\r').Trim();
-            if (string.IsNullOrEmpty(line)) continue;
-            if (!line.StartsWith(':')) return false;
+            // Skip whitespace/newlines to find line start
+            while (pos < len && (content[pos] == '\n' || content[pos] == '\r' || content[pos] == ' ' || content[pos] == '\t'))
+                pos++;
+
+            if (pos >= len) break;
+
+            // Non-empty line — must start with ':'
+            if (content[pos] != ':') return false;
             checked_++;
-            if (checked_ >= Constants.ValidatorSampleLines) break;
+
+            // Advance to end of line
+            while (pos < len && content[pos] != '\n')
+                pos++;
         }
 
         return checked_ > 0;

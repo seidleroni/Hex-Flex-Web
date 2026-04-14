@@ -46,29 +46,38 @@ else
     private async Task HandleFileSelected(IBrowserFile file)
     {
         Error = null;
+        var totalSw = System.Diagnostics.Stopwatch.StartNew();
 
         try
         {
             // Read file bytes BEFORE changing state — re-rendering can invalidate the stream
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             using var stream = file.OpenReadStream(maxAllowedSize: Constants.MaxFileSize);
             using var ms = new System.IO.MemoryStream();
             await stream.CopyToAsync(ms);
             var content = System.Text.Encoding.UTF8.GetString(ms.ToArray());
             var fileName = file.Name;
+            Console.WriteLine($"[PERF] File read + decode: {sw.ElapsedMilliseconds}ms ({content.Length} chars, {ms.Length} bytes)");
 
             IsLoading = true;
             StateHasChanged();
             await Task.Yield();
 
+            sw.Restart();
             if (!FileValidator.IsIntelHexContent(content))
             {
                 Error = "The file does not appear to be a valid Intel HEX file.";
                 IsLoading = false;
                 return;
             }
+            Console.WriteLine($"[PERF] Validation: {sw.ElapsedMilliseconds}ms");
 
+            sw.Restart();
             Memory = HexParser.Parse(content);
+            Console.WriteLine($"[PERF] HexParser.Parse: {sw.ElapsedMilliseconds}ms");
             FileName = fileName;
+
+            Console.WriteLine($"[PERF] Total HandleFileSelected (C# work): {totalSw.ElapsedMilliseconds}ms");
         }
         catch (Exception ex)
         {

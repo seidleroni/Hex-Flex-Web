@@ -26,6 +26,9 @@
     private static readonly int[] _byteOffsets = Enumerable.Range(0, BytesPerRow).ToArray();
 
     [Parameter] public SparseMemory Memory { get; set; } = default!;
+    [Parameter] public List<MemorySegment> Segments { get; set; } = new();
+    [Parameter] public byte[][] SegmentDataArrays { get; set; } = Array.Empty<byte[]>();
+    [Parameter] public byte[][] SegmentValidityArrays { get; set; } = Array.Empty<byte[]>();
     [Parameter] public EventCallback<int> OnActiveSegmentChanged { get; set; }
     [Parameter] public int ActiveSegmentIndex { get; set; }
 
@@ -36,12 +39,11 @@
     public string ScrollContainerId => _scrollElementId;
     private DotNetObjectReference<HexViewer>? _dotNetRef;
     private bool _jsInitialized;
-    private SparseMemory? _lastMemory;
+    private byte[][]? _lastDataArrays;
 
     // Layout data (kept in C# for GoToAddress calculations)
     private LayoutEntry[] _layout = Array.Empty<LayoutEntry>();
     private int _totalRowCount;
-    private List<MemorySegment> _segments = new();
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -51,9 +53,9 @@
             await JS.InvokeVoidAsync("hexFlexHexViewer.init", _scrollElementId, _dotNetRef);
             _jsInitialized = true;
 
-            if (Memory != null && Memory != _lastMemory)
+            if (SegmentDataArrays.Length > 0 && SegmentDataArrays != _lastDataArrays)
             {
-                _lastMemory = Memory;
+                _lastDataArrays = SegmentDataArrays;
                 await SendDataToJs();
             }
         }
@@ -61,53 +63,29 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (Memory != null && Memory != _lastMemory && _jsInitialized)
+        if (SegmentDataArrays.Length > 0 && SegmentDataArrays != _lastDataArrays && _jsInitialized)
         {
-            _lastMemory = Memory;
+            _lastDataArrays = SegmentDataArrays;
             await SendDataToJs();
         }
     }
 
     private async Task SendDataToJs()
     {
-        _segments = Memory.GetDataSegments();
+        var totalSw = System.Diagnostics.Stopwatch.StartNew();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         BuildLayout();
+        Console.WriteLine($"[PERF] HexViewer.BuildLayout: {sw.ElapsedMilliseconds}ms ({_totalRowCount} rows)");
 
-        // Serialize layout as JSON
+        sw.Restart();
         var layoutJson = SerializeLayout();
+        Console.WriteLine($"[PERF] HexViewer.SerializeLayout: {sw.ElapsedMilliseconds}ms ({layoutJson.Length} chars)");
 
-        // Extract byte data per segment as arrays
-        var segmentDataArrays = new byte[_segments.Count][];
-        var segmentValidityArrays = new byte[_segments.Count][];
-
-        for (int segIdx = 0; segIdx < _segments.Count; segIdx++)
-        {
-            var seg = _segments[segIdx];
-            long alignedStart = AlignDown(seg.Start);
-            long alignedEnd = AlignDown(seg.End);
-            int rowCount = (int)((alignedEnd - alignedStart) / BytesPerRow) + 1;
-            int byteCount = rowCount * BytesPerRow;
-
-            var data = new byte[byteCount];
-            var validity = new byte[byteCount];
-
-            for (int i = 0; i < byteCount; i++)
-            {
-                long addr = alignedStart + i;
-                var b = Memory.GetByte(addr);
-                if (b.HasValue)
-                {
-                    data[i] = b.Value;
-                    validity[i] = 1;
-                }
-            }
-
-            segmentDataArrays[segIdx] = data;
-            segmentValidityArrays[segIdx] = validity;
-        }
-
+        sw.Restart();
         await JS.InvokeVoidAsync("hexFlexHexViewer.setData",
-            _scrollElementId, layoutJson, segmentDataArrays, segmentValidityArrays);
+            _scrollElementId, layoutJson, SegmentDataArrays, SegmentValidityArrays);
+        Console.WriteLine($"[PERF] HexViewer.JS.setData interop: {sw.ElapsedMilliseconds}ms");
+        Console.WriteLine($"[PERF] HexViewer.SendDataToJs total: {totalSw.ElapsedMilliseconds}ms");
     }
 
     private string SerializeLayout()
@@ -144,7 +122,7 @@
 
     private void BuildLayout()
     {
-        if (_segments.Count == 0)
+        if (Segments.Count == 0)
         {
             _layout = Array.Empty<LayoutEntry>();
             _totalRowCount = 0;
@@ -154,13 +132,13 @@
         var entries = new List<LayoutEntry>();
         int runningRow = 0;
 
-        for (int segIdx = 0; segIdx < _segments.Count; segIdx++)
+        for (int segIdx = 0; segIdx < Segments.Count; segIdx++)
         {
-            var seg = _segments[segIdx];
+            var seg = Segments[segIdx];
 
             if (segIdx > 0)
             {
-                var prev = _segments[segIdx - 1];
+                var prev = Segments[segIdx - 1];
                 long gapStartAddr = prev.End + 1;
                 long gapEndAddr = seg.Start - 1;
                 long gapSize = gapEndAddr - gapStartAddr + 1;

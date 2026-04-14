@@ -9,6 +9,12 @@ public class SparseMemory
     private readonly int _blockSize;
     private long[]? _sortedKeys;
 
+    // Incremental tracking
+    private long _dataSize;
+    private long _minAddress = long.MaxValue;
+    private long _maxAddress = long.MinValue;
+    private List<MemorySegment>? _cachedSegments;
+
     public SparseMemory(int blockSize = DefaultBlockSize)
     {
         if (blockSize <= 0) throw new ArgumentException("Block size must be positive.", nameof(blockSize));
@@ -38,7 +44,15 @@ public class SparseMemory
             _memoryBlocks[blockKey] = block;
             InvalidateSortedKeys();
         }
-        block[GetOffset(address)] = value;
+        var offset = GetOffset(address);
+        if (block[offset] is null)
+            _dataSize++;
+        block[offset] = value;
+
+        if (address < _minAddress) _minAddress = address;
+        if (address > _maxAddress) _maxAddress = address;
+
+        _cachedSegments = null; // invalidate segment cache
     }
 
     public byte? GetByte(long address)
@@ -51,45 +65,61 @@ public class SparseMemory
         return null;
     }
 
+    /// <summary>
+    /// Bulk-read bytes from a contiguous address range into pre-allocated arrays.
+    /// Much faster than calling GetByte() per byte — avoids repeated dictionary lookups.
+    /// </summary>
+    public void ReadRange(long startAddress, int count, byte[] data, byte[] validity)
+    {
+        int i = 0;
+        while (i < count)
+        {
+            long addr = startAddress + i;
+            var blockKey = GetBlockKey(addr);
+            int offset = GetOffset(addr);
+
+            if (!_memoryBlocks.TryGetValue(blockKey, out var block))
+            {
+                // No block — skip ahead to next block boundary
+                int remaining = _blockSize - offset;
+                int skip = Math.Min(remaining, count - i);
+                // data[]/validity[] already zeroed by default
+                i += skip;
+                continue;
+            }
+
+            // Copy from this block until end of block or end of requested range
+            int blockRemaining = _blockSize - offset;
+            int toCopy = Math.Min(blockRemaining, count - i);
+
+            for (int j = 0; j < toCopy; j++)
+            {
+                var b = block[offset + j];
+                if (b.HasValue)
+                {
+                    data[i + j] = b.Value;
+                    validity[i + j] = 1;
+                }
+            }
+            i += toCopy;
+        }
+    }
+
     public long GetStartAddress()
     {
         if (_memoryBlocks.Count == 0) return 0;
-        var sortedKeys = GetSortedKeys();
-        var firstBlockKey = sortedKeys[0];
-        var block = _memoryBlocks[firstBlockKey];
-        for (int offset = 0; offset < _blockSize; offset++)
-        {
-            if (block[offset] is not null)
-                return firstBlockKey + offset;
-        }
-        return 0;
+        return _minAddress;
     }
 
     public long GetEndAddress()
     {
         if (_memoryBlocks.Count == 0) return 0;
-        var sortedKeys = GetSortedKeys();
-        var lastBlockKey = sortedKeys[^1];
-        var block = _memoryBlocks[lastBlockKey];
-        for (int offset = _blockSize - 1; offset >= 0; offset--)
-        {
-            if (block[offset] is not null)
-                return lastBlockKey + offset;
-        }
-        return 0;
+        return _maxAddress;
     }
 
     public long GetDataSize()
     {
-        long count = 0;
-        foreach (var block in _memoryBlocks.Values)
-        {
-            foreach (var b in block)
-            {
-                if (b is not null) count++;
-            }
-        }
-        return count;
+        return _dataSize;
     }
 
     public bool IsEmpty => _memoryBlocks.Count == 0;
@@ -98,6 +128,10 @@ public class SparseMemory
     {
         _memoryBlocks.Clear();
         InvalidateSortedKeys();
+        _dataSize = 0;
+        _minAddress = long.MaxValue;
+        _maxAddress = long.MinValue;
+        _cachedSegments = null;
     }
 
     public IReadOnlyDictionary<long, byte?[]> MemoryBlocks => _memoryBlocks;
@@ -106,10 +140,17 @@ public class SparseMemory
     /// Identifies contiguous regions of memory containing "meaningful" data
     /// (any byte that is not null and not 0xFF). Regions separated by gaps
     /// larger than SegmentGapThreshold are reported as separate segments.
+    /// Results are cached until the next SetByte/Clear call.
     /// </summary>
     public List<MemorySegment> GetDataSegments()
     {
-        if (IsEmpty) return new();
+        if (_cachedSegments != null) return _cachedSegments;
+
+        if (IsEmpty)
+        {
+            _cachedSegments = new();
+            return _cachedSegments;
+        }
 
         var allSubSegments = new List<(long Start, long End)>();
         var sortedKeys = GetSortedKeys();
@@ -153,7 +194,11 @@ public class SparseMemory
             }
         }
 
-        if (allSubSegments.Count == 0) return new();
+        if (allSubSegments.Count == 0)
+        {
+            _cachedSegments = new();
+            return _cachedSegments;
+        }
 
         var segments = new List<MemorySegment>();
         var current = allSubSegments[0];
@@ -175,7 +220,8 @@ public class SparseMemory
         }
         segments.Add(new MemorySegment(current.Start, current.End));
 
-        return segments;
+        _cachedSegments = segments;
+        return _cachedSegments;
     }
 }
 

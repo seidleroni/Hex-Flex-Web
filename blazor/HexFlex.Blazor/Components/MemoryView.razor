@@ -47,11 +47,16 @@
                           OnSegmentClick="HandleSegmentClick" />
             <HexViewer @ref="_hexViewer"
                        Memory="Memory"
+                       Segments="Segments"
+                       SegmentDataArrays="_segmentDataArrays"
+                       SegmentValidityArrays="_segmentValidityArrays"
                        ActiveSegmentIndex="ActiveSegmentIndex"
                        OnActiveSegmentChanged="HandleActiveSegmentChanged" />
             @if (_hexViewer != null)
             {
-                <Minimap Memory="Memory"
+                <Minimap Segments="Segments"
+                         SegmentDataArrays="_segmentDataArrays"
+                         SegmentValidityArrays="_segmentValidityArrays"
                          ScrollContainerId="@_hexViewer.ScrollContainerId" />
             }
         </div>
@@ -61,11 +66,16 @@
         <div class="memory-view-content">
             <HexViewer @ref="_hexViewer"
                        Memory="Memory"
+                       Segments="Segments"
+                       SegmentDataArrays="_segmentDataArrays"
+                       SegmentValidityArrays="_segmentValidityArrays"
                        ActiveSegmentIndex="0"
                        OnActiveSegmentChanged="HandleActiveSegmentChanged" />
             @if (_hexViewer != null)
             {
-                <Minimap Memory="Memory"
+                <Minimap Segments="Segments"
+                         SegmentDataArrays="_segmentDataArrays"
+                         SegmentValidityArrays="_segmentValidityArrays"
                          ScrollContainerId="@_hexViewer.ScrollContainerId" />
             }
         </div>
@@ -75,6 +85,8 @@
 </div>
 
 @code {
+    private const int BytesPerRow = Constants.BytesPerRow;
+
     [Parameter] public SparseMemory Memory { get; set; } = default!;
     [Parameter] public string FileName { get; set; } = "";
     [Parameter] public EventCallback OnLoadNew { get; set; }
@@ -84,6 +96,9 @@
     private long EndAddress;
     private long DataSize;
     private List<MemorySegment> Segments = new();
+
+    private byte[][] _segmentDataArrays = Array.Empty<byte[]>();
+    private byte[][] _segmentValidityArrays = Array.Empty<byte[]>();
 
     private int ActiveSegmentIndex { get; set; }
     private string AddressInput { get; set; } = "";
@@ -106,13 +121,49 @@
         if (Memory != null && Memory != _lastMemory)
         {
             _lastMemory = Memory;
+            var totalSw = System.Diagnostics.Stopwatch.StartNew();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             StartAddress = Memory.GetStartAddress();
             EndAddress = Memory.GetEndAddress();
             DataSize = Memory.GetDataSize();
+            Console.WriteLine($"[PERF] MemoryView.Stats: {sw.ElapsedMilliseconds}ms");
+
+            sw.Restart();
             Segments = Memory.GetDataSegments();
+            Console.WriteLine($"[PERF] MemoryView.GetDataSegments: {sw.ElapsedMilliseconds}ms ({Segments.Count} segments)");
+
+            sw.Restart();
+            ExtractByteData();
+            Console.WriteLine($"[PERF] MemoryView.ExtractByteData: {sw.ElapsedMilliseconds}ms");
+
+            Console.WriteLine($"[PERF] MemoryView.OnParametersSet total: {totalSw.ElapsedMilliseconds}ms");
             _needsMinimapRender = true;
         }
     }
+
+    private void ExtractByteData()
+    {
+        _segmentDataArrays = new byte[Segments.Count][];
+        _segmentValidityArrays = new byte[Segments.Count][];
+
+        for (int segIdx = 0; segIdx < Segments.Count; segIdx++)
+        {
+            var seg = Segments[segIdx];
+            long alignedStart = AlignDown(seg.Start);
+            long alignedEnd = AlignDown(seg.End);
+            int rowCount = (int)((alignedEnd - alignedStart) / BytesPerRow) + 1;
+            int byteCount = rowCount * BytesPerRow;
+
+            var data = new byte[byteCount];
+            var validity = new byte[byteCount];
+            Memory.ReadRange(alignedStart, byteCount, data, validity);
+
+            _segmentDataArrays[segIdx] = data;
+            _segmentValidityArrays[segIdx] = validity;
+        }
+    }
+
+    private static long AlignDown(long address) => (address / BytesPerRow) * BytesPerRow;
 
     private async Task HandleGoToAddress()
     {
