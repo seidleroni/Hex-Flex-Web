@@ -203,6 +203,25 @@ function renderVisible(state) {
                 '"><span class="hex-gap-text">\u2022\u2022\u2022 GAP: ' +
                 formatBytes(le.gapEndAddr - le.gapStartAddr + 1) +
                 ' SKIPPED \u2022\u2022\u2022</span></div>';
+        } else if (le.isEmpty) {
+            // Empty row — address with -- for every byte
+            const offsetInEmpty = globalRow - le.globalRowStart;
+            const rowAddr = le.segStartAddr + offsetInEmpty * 16;
+            const addrHex = hexAddr8(rowAddr);
+
+            html += '<div class="hex-row" style="transform:translateY(' + y +
+                'px)" data-testid="data-row" data-address="' + addrHex + '">';
+            html += '<span class="hex-addr">' + addrHex + '</span>';
+            html += '<span class="hex-bytes">';
+            for (let j = 0; j < 16; j++) {
+                html += '<span class="hex-byte hex-byte-empty">--</span>';
+            }
+            html += '</span>';
+            html += '<span class="hex-ascii">';
+            for (let j = 0; j < 16; j++) {
+                html += '<span class="hex-asc">.</span>';
+            }
+            html += '</span></div>';
         } else {
             const offsetInSeg = globalRow - le.globalRowStart;
             const rowAddr = le.segStartAddr + offsetInSeg * 16;

@@ -81,6 +81,8 @@
             _canvasId, layoutJson, segmentDataArrays, segmentValidityArrays);
     }
 
+    private const long ViewGapThreshold = 0x100000; // 1MB
+
     private (List<LayoutEntry> entries, int totalRowCount) BuildLayout(List<MemorySegment> segments)
     {
         if (segments.Count == 0)
@@ -96,20 +98,41 @@
             if (segIdx > 0)
             {
                 var prev = segments[segIdx - 1];
-                long gapStart = prev.End + 1;
-                long gapEnd = seg.Start - 1;
-                if (gapEnd >= gapStart)
+                long gapStartAddr = prev.End + 1;
+                long gapEndAddr = seg.Start - 1;
+                long gapSize = gapEndAddr - gapStartAddr + 1;
+
+                if (gapSize > 0)
                 {
-                    entries.Add(new LayoutEntry
+                    if (gapSize > ViewGapThreshold)
                     {
-                        IsGap = true,
-                        GlobalRowStart = runningRow,
-                        RowCount = 1,
-                        GapStartAddr = gapStart,
-                        GapEndAddr = gapEnd,
-                        SegmentIndex = -1
-                    });
-                    runningRow += 1;
+                        entries.Add(new LayoutEntry
+                        {
+                            IsGap = true,
+                            GlobalRowStart = runningRow,
+                            RowCount = 1,
+                            GapStartAddr = gapStartAddr,
+                            GapEndAddr = gapEndAddr,
+                            SegmentIndex = -1
+                        });
+                        runningRow += 1;
+                    }
+                    else
+                    {
+                        long emptyStart = AlignDown(gapStartAddr);
+                        long emptyEnd = AlignDown(gapEndAddr);
+                        int emptyRowCount = (int)((emptyEnd - emptyStart) / BytesPerRow) + 1;
+
+                        entries.Add(new LayoutEntry
+                        {
+                            IsEmpty = true,
+                            GlobalRowStart = runningRow,
+                            RowCount = emptyRowCount,
+                            SegStartAddr = emptyStart,
+                            SegmentIndex = -1
+                        });
+                        runningRow += emptyRowCount;
+                    }
                 }
             }
 
@@ -119,7 +142,6 @@
 
             entries.Add(new LayoutEntry
             {
-                IsGap = false,
                 GlobalRowStart = runningRow,
                 RowCount = rowCount,
                 SegStartAddr = segAlignedStart,
@@ -141,6 +163,7 @@
             if (i > 0) sb.Append(',');
             var le = entries[i];
             sb.Append("{\"isGap\":").Append(le.IsGap ? "true" : "false");
+            sb.Append(",\"isEmpty\":").Append(le.IsEmpty ? "true" : "false");
             sb.Append(",\"globalRowStart\":").Append(le.GlobalRowStart);
             sb.Append(",\"rowCount\":").Append(le.RowCount);
             sb.Append(",\"segmentIndex\":").Append(le.SegmentIndex);
@@ -174,6 +197,7 @@
     private struct LayoutEntry
     {
         public bool IsGap;
+        public bool IsEmpty;
         public int GlobalRowStart;
         public int RowCount;
         public long SegStartAddr;
