@@ -7,9 +7,19 @@ window.hexFlexFileUpload = {
         }
     },
 
-    // Initialize drag-drop on a container, forwarding dropped files to the InputFile
+    // Initialize drag-drop and click-to-upload on a container
     initDropZone: function (dropZoneElement, inputFileElement) {
         if (!dropZoneElement || !inputFileElement) return;
+
+        // Handle click: open file dialog synchronously from user gesture
+        // (Blazor async interop breaks the trusted gesture chain, causing hangs)
+        function onClick(e) {
+            // Don't re-trigger if the click came from the input itself
+            if (e.target === inputFileElement) return;
+            inputFileElement.click();
+        }
+
+        dropZoneElement.addEventListener('click', onClick);
 
         function onDrop(e) {
             e.preventDefault();
@@ -46,6 +56,7 @@ window.hexFlexFileUpload = {
 
         // Return a cleanup reference
         dropZoneElement._hexFlexCleanup = function () {
+            dropZoneElement.removeEventListener('click', onClick);
             dropZoneElement.removeEventListener('drop', onDrop);
             dropZoneElement.removeEventListener('dragover', onDragOver);
             dropZoneElement.removeEventListener('dragenter', onDragEnter);

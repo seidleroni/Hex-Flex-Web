@@ -4,7 +4,6 @@
 <div class="upload-zone" @ref="dropZoneRef"
      role="button"
      tabindex="0"
-     @onclick="TriggerFileInput"
      @onkeydown="HandleKeyDown">
     <InputFile @ref="inputFileRef" OnChange="HandleFileSelected" style="display:none" />
     <div class="upload-zone-content">
@@ -51,7 +50,11 @@
     {
         if (e.Key == "Enter" || e.Key == " ")
         {
-            await TriggerFileInput();
+            // Keyboard events also need synchronous click — route through JS
+            if (inputFileRef?.Element is not null)
+            {
+                await JS.InvokeVoidAsync("hexFlexFileUpload.clickElement", inputFileRef.Element);
+            }
         }
     }
 
