@@ -101,7 +101,9 @@ else
                                  BytesA="_bytesA"
                                  BytesB="_bytesB"
                                  Validity="_validity"
-                                 VirtualRowsJson="@_virtualRowsJson"
+                                 VrAddressBytes="_vrAddressBytes"
+                                 VrFlags="_vrFlags"
+                                 GapDataBytes="_gapDataBytes"
                                  ActiveSegmentIndex="_activeSegmentIndex"
                                  OnActiveSegmentChanged="HandleActiveSegmentChanged" />
             @if (_compHexViewer != null)
@@ -110,7 +112,9 @@ else
                                    DiffTypes="_diffTypes"
                                    BytesA="_bytesA"
                                    Validity="_validity"
-                                   VirtualRowsJson="@_virtualRowsJson"
+                                   VrAddressBytes="_vrAddressBytes"
+                                   VrFlags="_vrFlags"
+                                   GapDataBytes="_gapDataBytes"
                                    ScrollContainerId="@_compHexViewer.ScrollContainerId" />
             }
             @if (_diffAddresses.Count > 0)
@@ -153,7 +157,11 @@ else
     private byte[] _bytesA = Array.Empty<byte>();
     private byte[] _bytesB = Array.Empty<byte>();
     private byte[] _validity = Array.Empty<byte>();
-    private string _virtualRowsJson = "[]";
+    // Virtual rows as byte arrays for fast Uint8Array transfer
+    // (only byte[] gets zero-copy in Blazor WASM JS interop)
+    private byte[] _vrAddressBytes = Array.Empty<byte>(); // 4 bytes per row (uint32 LE)
+    private byte[] _vrFlags = Array.Empty<byte>(); // bit 0 = isGap, bits 1-7 = segmentIndex
+    private byte[] _gapDataBytes = Array.Empty<byte>(); // 12 bytes per gap (3 x uint32 LE)
 
     private bool _isPrevDisabled => _highlightedDiffIndex == 0;
     private bool _isNextDisabled => _highlightedDiffIndex != -1 && _highlightedDiffIndex == _diffAddresses.Count - 1;
@@ -224,8 +232,8 @@ else
             Console.WriteLine($"[PERF] Compare.ExtractDiffArrays: {sw.ElapsedMilliseconds}ms ({_diffTypes.Length} bytes)");
 
             sw.Restart();
-            _virtualRowsJson = SerializeVirtualRows(_comparison.GetVirtualRows());
-            Console.WriteLine($"[PERF] Compare.SerializeVirtualRows: {sw.ElapsedMilliseconds}ms ({_virtualRowsJson.Length} chars)");
+            PackVirtualRows(_comparison.GetVirtualRows(), out _vrAddressBytes, out _vrFlags, out _gapDataBytes);
+            Console.WriteLine($"[PERF] Compare.PackVirtualRows: {sw.ElapsedMilliseconds}ms ({_vrFlags.Length} rows, {_gapDataBytes.Length / 12} gaps)");
 
             _highlightedDiffIndex = -1;
             _activeSegmentIndex = 0;
@@ -237,30 +245,47 @@ else
         }
     }
 
-    private static string SerializeVirtualRows(List<ComparisonVirtualRow> rows)
+    private static void PackVirtualRows(
+        List<ComparisonVirtualRow> rows,
+        out byte[] addressBytes, out byte[] flags, out byte[] gapDataBytes)
     {
-        var sb = new System.Text.StringBuilder(rows.Count * 40);
-        sb.Append('[');
-        for (int i = 0; i < rows.Count; i++)
+        int count = rows.Count;
+        addressBytes = new byte[count * 4]; // uint32 LE per row
+        flags = new byte[count];
+
+        // Count gaps first
+        int gapCount = 0;
+        for (int i = 0; i < count; i++)
+            if (rows[i].IsGap) gapCount++;
+
+        gapDataBytes = new byte[gapCount * 12]; // 3 x uint32 LE per gap
+        int gapIdx = 0;
+
+        for (int i = 0; i < count; i++)
         {
-            if (i > 0) sb.Append(',');
             var vr = rows[i];
-            sb.Append("{\"isGap\":").Append(vr.IsGap ? "true" : "false");
-            sb.Append(",\"segmentIndex\":").Append(vr.SegmentIndex);
+            flags[i] = (byte)((vr.IsGap ? 1 : 0) | ((vr.SegmentIndex & 0x7F) << 1));
+
             if (vr.IsGap)
             {
-                sb.Append(",\"gapStartAddr\":").Append(vr.GapStartAddr);
-                sb.Append(",\"gapEndAddr\":").Append(vr.GapEndAddr);
-                sb.Append(",\"skippedBytes\":").Append(vr.SkippedBytes);
+                WriteUint32LE(gapDataBytes, gapIdx * 12, (uint)vr.GapStartAddr);
+                WriteUint32LE(gapDataBytes, gapIdx * 12 + 4, (uint)vr.GapEndAddr);
+                WriteUint32LE(gapDataBytes, gapIdx * 12 + 8, (uint)vr.SkippedBytes);
+                gapIdx++;
             }
             else
             {
-                sb.Append(",\"address\":").Append(vr.Address);
+                WriteUint32LE(addressBytes, i * 4, (uint)vr.Address);
             }
-            sb.Append('}');
         }
-        sb.Append(']');
-        return sb.ToString();
+    }
+
+    private static void WriteUint32LE(byte[] buf, int offset, uint value)
+    {
+        buf[offset] = (byte)(value & 0xFF);
+        buf[offset + 1] = (byte)((value >> 8) & 0xFF);
+        buf[offset + 2] = (byte)((value >> 16) & 0xFF);
+        buf[offset + 3] = (byte)((value >> 24) & 0xFF);
     }
 
     private static async Task<(SparseMemory? memory, string? error)> ParseFile(IBrowserFile file)

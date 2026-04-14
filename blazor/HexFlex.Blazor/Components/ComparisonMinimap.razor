@@ -11,7 +11,9 @@
     [Parameter] public byte[] DiffTypes { get; set; } = Array.Empty<byte>();
     [Parameter] public byte[] BytesA { get; set; } = Array.Empty<byte>();
     [Parameter] public byte[] Validity { get; set; } = Array.Empty<byte>();
-    [Parameter] public string VirtualRowsJson { get; set; } = "[]";
+    [Parameter] public byte[] VrAddressBytes { get; set; } = Array.Empty<byte>();
+    [Parameter] public byte[] VrFlags { get; set; } = Array.Empty<byte>();
+    [Parameter] public byte[] GapDataBytes { get; set; } = Array.Empty<byte>();
     [Parameter] public string ScrollContainerId { get; set; } = "";
 
     private string _canvasId = $"cmp-minimap-{Guid.NewGuid():N}";
@@ -42,13 +44,13 @@
         }
     }
 
-    private bool HasValidData() => DiffTypes.Length > 0 && VirtualRowsJson.Length > 2;
+    private bool HasValidData() => DiffTypes.Length > 0 && VrAddressBytes.Length > 0;
 
     private async Task SendDataToJs()
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         await JS.InvokeVoidAsync("hexFlexComparisonMinimap.setData",
-            _canvasId, VirtualRowsJson, DiffTypes, BytesA, Validity);
+            _canvasId, VrAddressBytes, VrFlags, GapDataBytes, DiffTypes, BytesA, Validity);
         Console.WriteLine($"[PERF] CompMinimap.JS.setData interop: {sw.ElapsedMilliseconds}ms");
     }
 

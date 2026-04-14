@@ -28,7 +28,9 @@
     [Parameter] public byte[] BytesA { get; set; } = Array.Empty<byte>();
     [Parameter] public byte[] BytesB { get; set; } = Array.Empty<byte>();
     [Parameter] public byte[] Validity { get; set; } = Array.Empty<byte>();
-    [Parameter] public string VirtualRowsJson { get; set; } = "[]";
+    [Parameter] public byte[] VrAddressBytes { get; set; } = Array.Empty<byte>();
+    [Parameter] public byte[] VrFlags { get; set; } = Array.Empty<byte>();
+    [Parameter] public byte[] GapDataBytes { get; set; } = Array.Empty<byte>();
     [Parameter] public EventCallback<int> OnActiveSegmentChanged { get; set; }
     [Parameter] public int ActiveSegmentIndex { get; set; }
 
@@ -65,13 +67,13 @@
         }
     }
 
-    private bool HasValidData() => DiffTypes.Length > 0 && VirtualRowsJson.Length > 2;
+    private bool HasValidData() => DiffTypes.Length > 0 && VrAddressBytes.Length > 0;
 
     private async Task SendDataToJs()
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         await JS.InvokeVoidAsync("hexFlexComparisonHexViewer.setData",
-            _scrollElementId, VirtualRowsJson, DiffTypes, BytesB, BytesA, Validity);
+            _scrollElementId, VrAddressBytes, VrFlags, GapDataBytes, DiffTypes, BytesB, BytesA, Validity);
         Console.WriteLine($"[PERF] CompHexViewer.JS.setData interop: {sw.ElapsedMilliseconds}ms");
     }
 

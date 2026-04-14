@@ -79,29 +79,54 @@ window.hexFlexComparisonMinimap = {
         this._instances.set(canvasId, state);
     },
 
-    setData: function (canvasId, virtualRowsJson, diffTypes, bytesA, validity) {
+    setData: function (canvasId, vrAddressBytes, vrFlags, gapDataBytes, diffTypes, bytesA, validity) {
         var state = this._instances.get(canvasId);
         if (!state) return;
 
-        var virtualRows = JSON.parse(virtualRowsJson);
+        // Reconstruct virtualRows from byte arrays (uint32 LE packed)
+        var addrView = new DataView(vrAddressBytes.buffer, vrAddressBytes.byteOffset, vrAddressBytes.byteLength);
+        var gapView = gapDataBytes.length > 0
+            ? new DataView(gapDataBytes.buffer, gapDataBytes.byteOffset, gapDataBytes.byteLength)
+            : null;
+        var count = vrFlags.length;
+        var virtualRows = new Array(count);
+        var gapIdx = 0;
+        var dataRowIndex = 0;
+        var dataRowIndices = new Array(count);
+
+        for (var i = 0; i < count; i++) {
+            var flag = vrFlags[i];
+            var isGap = (flag & 1) === 1;
+            var segmentIndex = (flag >> 1) & 0x7F;
+
+            if (isGap) {
+                virtualRows[i] = {
+                    isGap: true,
+                    segmentIndex: segmentIndex,
+                    gapStartAddr: gapView.getUint32(gapIdx * 12, true),
+                    gapEndAddr: gapView.getUint32(gapIdx * 12 + 4, true),
+                    skippedBytes: gapView.getUint32(gapIdx * 12 + 8, true)
+                };
+                dataRowIndices[i] = -1;
+                gapIdx++;
+            } else {
+                virtualRows[i] = {
+                    isGap: false,
+                    segmentIndex: segmentIndex,
+                    address: addrView.getUint32(i * 4, true)
+                };
+                dataRowIndices[i] = dataRowIndex;
+                dataRowIndex++;
+            }
+        }
+
         state.virtualRows = virtualRows;
-        state.totalRowCount = virtualRows.length;
+        state.totalRowCount = count;
         state.diffTypes = diffTypes;
         state.bytesA = bytesA;
         state.validity = validity;
         state.pixelColors = null;
-
-        // Build data row index mapping
-        var dataRowIndex = 0;
-        state.dataRowIndices = [];
-        for (var i = 0; i < virtualRows.length; i++) {
-            if (!virtualRows[i].isGap) {
-                state.dataRowIndices.push(dataRowIndex);
-                dataRowIndex++;
-            } else {
-                state.dataRowIndices.push(-1);
-            }
-        }
+        state.dataRowIndices = dataRowIndices;
 
         drawCmpMinimap(state);
     },
