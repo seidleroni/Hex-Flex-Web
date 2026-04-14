@@ -19,7 +19,7 @@
 </div>
 
 @code {
-    private const int BytesPerRow = 16;
+    private const int BytesPerRow = Constants.BytesPerRow;
 
     private static readonly int[] _byteOffsets = Enumerable.Range(0, BytesPerRow).ToArray();
 

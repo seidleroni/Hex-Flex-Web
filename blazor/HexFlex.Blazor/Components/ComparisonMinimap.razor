@@ -7,7 +7,7 @@
 </div>
 
 @code {
-    private const int BytesPerRow = 16;
+    private const int BytesPerRow = Constants.BytesPerRow;
 
     [Parameter] public ComparisonResult Comparison { get; set; } = default!;
     [Parameter] public string ScrollContainerId { get; set; } = "";

@@ -17,7 +17,7 @@ public static class FileValidator
             if (string.IsNullOrEmpty(line)) continue;
             if (!line.StartsWith(':')) return false;
             checked_++;
-            if (checked_ >= 5) break;
+            if (checked_ >= Constants.ValidatorSampleLines) break;
         }
 
         return checked_ > 0;

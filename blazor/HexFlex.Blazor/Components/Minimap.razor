@@ -14,7 +14,7 @@
     private bool _jsInitialized;
     private SparseMemory? _lastMemory;
 
-    private const int BytesPerRow = 16;
+    private const int BytesPerRow = Constants.BytesPerRow;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -81,7 +81,7 @@
             _canvasId, layoutJson, segmentDataArrays, segmentValidityArrays);
     }
 
-    private const long ViewGapThreshold = 0x100000; // 1MB
+    private const long ViewGapThreshold = Constants.ViewGapThreshold;
 
     private (List<LayoutEntry> entries, int totalRowCount) BuildLayout(List<MemorySegment> segments)
     {

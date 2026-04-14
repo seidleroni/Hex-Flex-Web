@@ -19,9 +19,9 @@
 </div>
 
 @code {
-    private const int RowHeightPx = 28;
-    private const int BytesPerRow = 16;
-    private const int BufferRows = 15;
+    private const int RowHeightPx = Constants.RowHeightPx;
+    private const int BytesPerRow = Constants.BytesPerRow;
+    private const int BufferRows = Constants.BufferRows;
 
     private static readonly int[] _byteOffsets = Enumerable.Range(0, BytesPerRow).ToArray();
 
@@ -140,7 +140,7 @@
         return sb.ToString();
     }
 
-    private const long ViewGapThreshold = 0x100000; // 1MB — gaps larger than this get collapsed
+    private const long ViewGapThreshold = Constants.ViewGapThreshold;
 
     private void BuildLayout()
     {

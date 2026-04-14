@@ -11,9 +11,9 @@
 | 4 | Single File View — Hex/ASCII Table | Complete ✓ |
 | 5 | Minimap (Single File) | Complete ✓ |
 | 6 | Compare View | Complete ✓ |
-| 7 | Polish & Parity | Not Started |
+| 7 | Polish & Parity | Complete |
 
-**Current phase:** Phase 6 approved. Proceeding to Phase 7.
+**Current phase:** Phase 7 complete, awaiting final checkin.
 
 ---
 

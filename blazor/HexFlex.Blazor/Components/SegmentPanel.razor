@@ -1,9 +1,9 @@
 @using HexFlex.Blazor.Services
 
-<div class="segment-panel">
+<div class="segment-panel" role="navigation" aria-label="Data segments">
     <h3 class="segment-panel-header">Data Segments</h3>
     <div class="segment-panel-list">
-        <ul>
+        <ul role="list">
             @for (int i = 0; i < Segments.Count; i++)
             {
                 var index = i;

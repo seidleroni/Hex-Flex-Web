@@ -167,13 +167,20 @@ html, body {
     font-size: 0.75rem;
     color: #6b7280; /* gray-500 */
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 0.25rem;
     flex-shrink: 0;
 }
 
 @media (min-width: 768px) {
-    .app-footer { padding: 0.75rem 2rem; position: relative; }
+    .app-footer {
+        padding: 0.75rem 2rem;
+        position: relative;
+        flex-direction: row;
+        gap: 1rem;
+    }
 }
 
 .footer-center {
@@ -193,6 +200,38 @@ html, body {
 
 .footer-separator {
     margin: 0 0.5rem;
+}
+
+.footer-build-info {
+    color: #9ca3af; /* gray-400 */
+    font-size: 0.75rem;
+}
+
+@media (min-width: 768px) {
+    .footer-build-info {
+        position: absolute;
+        right: 2rem;
+        top: 0;
+        bottom: 0;
+        display: flex;
+        align-items: center;
+    }
+}
+
+/* ===== Focus-Visible (global) ===== */
+/* Consistent focus ring for keyboard navigation on interactive elements */
+.segment-button:focus-visible,
+.btn-load-new:focus-visible,
+.btn-load-new-action:focus-visible,
+.btn-search:focus-visible,
+.upload-zone:focus-visible {
+    outline: 2px solid #06b6d4; /* cyan-500 */
+    outline-offset: 2px;
+}
+
+.address-input:focus-visible {
+    border-color: #06b6d4;
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.25);
 }
 
 /* ===== Upload Zone ===== */
@@ -815,7 +854,7 @@ html, body {
 }
 
 .hex-asc-print {
-    color: #fde68a; /* yellow-200 */
+    color: #fde047; /* yellow-300 — matches React */
 }
 
 /* Gap rows */
@@ -965,6 +1004,10 @@ html, body {
     margin-top: 0.25rem;
 }
 
+.diff-stat-value-modified { color: #facc15; /* yellow-400 */ }
+.diff-stat-value-added { color: #4ade80; /* green-400 */ }
+.diff-stat-value-removed { color: #f87171; /* red-400 */ }
+
 /* ===== Diff Legend ===== */
 .diff-legend {
     display: flex;
@@ -1068,6 +1111,26 @@ html, body {
     text-decoration: line-through;
 }
 
+/* ===== Highlight Animations ===== */
+@keyframes row-highlight-fade {
+    from { background-color: rgba(34, 211, 238, 0.3); }
+    to { background-color: transparent; }
+}
+
+.row-highlight {
+    animation: row-highlight-fade 2s ease-out forwards;
+}
+
+@keyframes cell-highlight-fade {
+    from { box-shadow: inset 0 0 0 100px rgba(34, 211, 238, 0.5); }
+    to { box-shadow: inset 0 0 0 0 rgba(34, 211, 238, 0); }
+}
+
+.cell-highlight {
+    animation: cell-highlight-fade 2s ease-out;
+    border-radius: 3px;
+}
+
 /* ===== Blazor Loading ===== */
 .loading-progress {
     position: relative;
@@ -1137,6 +1200,54 @@ html, body {
 
 .blazor-error-boundary::after {
     content: "An error has occurred.";
+}
+
+/* ===== Error Boundary (custom UI) ===== */
+.error-boundary-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 3rem 2rem;
+    text-align: center;
+}
+
+.error-boundary-icon {
+    width: 4rem;
+    height: 4rem;
+    color: #f87171; /* red-400 */
+}
+
+.error-boundary-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: white;
+}
+
+.error-boundary-message {
+    color: #9ca3af; /* gray-400 */
+    max-width: 24rem;
+}
+
+.error-boundary-btn {
+    padding: 0.625rem 1.5rem;
+    background: #0891b2; /* cyan-600 */
+    color: white;
+    font-weight: 600;
+    border: none;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.error-boundary-btn:hover {
+    background: #0e7490; /* cyan-700 */
+}
+
+.error-boundary-btn:focus-visible {
+    outline: 2px solid #06b6d4;
+    outline-offset: 2px;
 }
 
 /* ===== Scrollbar ===== */

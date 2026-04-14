@@ -11,7 +11,7 @@
                 <p class="header-subtitle">A web tool to view and compare Intel Hex files</p>
             </div>
         </div>
-        <div class="view-switcher">
+        <div class="view-switcher" role="group" aria-label="View mode">
             <button class="@(ViewMode == "view" ? "active" : "")"
                     @onclick='() => OnViewModeChanged.InvokeAsync("view")'
                     aria-pressed="@(ViewMode == "view")">
