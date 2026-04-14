@@ -18,9 +18,9 @@
             @if (MemoryA is not null)
             {
                 <FileInfoCard FileName="@FileNameA"
-                              StartAddress="MemoryA.GetStartAddress()"
-                              DataSize="MemoryA.GetDataSize()"
-                              SegmentCount="MemoryA.GetDataSegments().Count"
+                              StartAddress="_startAddressA"
+                              DataSize="_dataSizeA"
+                              SegmentCount="_segmentCountA"
                               OnLoadNew="ResetA" />
             }
             else
@@ -41,9 +41,9 @@
             @if (MemoryB is not null)
             {
                 <FileInfoCard FileName="@FileNameB"
-                              StartAddress="MemoryB.GetStartAddress()"
-                              DataSize="MemoryB.GetDataSize()"
-                              SegmentCount="MemoryB.GetDataSegments().Count"
+                              StartAddress="_startAddressB"
+                              DataSize="_dataSizeB"
+                              SegmentCount="_segmentCountB"
                               OnLoadNew="ResetB" />
             }
             else
@@ -68,6 +68,12 @@
     private string? ErrorA { get; set; }
     private string? ErrorB { get; set; }
 
+    // Cached stats — computed once per file load
+    private long _startAddressA, _dataSizeA;
+    private int _segmentCountA;
+    private long _startAddressB, _dataSizeB;
+    private int _segmentCountB;
+
     private async Task HandleFileASelected(IBrowserFile file)
     {
         var (memory, error) = await ParseFile(file);
@@ -79,6 +85,9 @@
         MemoryA = memory;
         FileNameA = file.Name;
         ErrorA = null;
+        _startAddressA = memory!.GetStartAddress();
+        _dataSizeA = memory.GetDataSize();
+        _segmentCountA = memory.GetDataSegments().Count;
     }
 
     private async Task HandleFileBSelected(IBrowserFile file)
@@ -92,6 +101,9 @@
         MemoryB = memory;
         FileNameB = file.Name;
         ErrorB = null;
+        _startAddressB = memory!.GetStartAddress();
+        _dataSizeB = memory.GetDataSize();
+        _segmentCountB = memory.GetDataSegments().Count;
     }
 
     private static async Task<(SparseMemory? memory, string? error)> ParseFile(IBrowserFile file)

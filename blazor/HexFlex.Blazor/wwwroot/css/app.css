@@ -699,8 +699,16 @@ html, body {
 
 .hex-hdr-bytes {
     flex-grow: 1;
-    white-space: pre;
-    letter-spacing: 0;
+    display: flex;
+    gap: 0;
+}
+
+.hex-byte-hdr {
+    color: #6b7280; /* gray-500 — match header color */
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .hex-hdr-ascii {
@@ -737,6 +745,7 @@ html, body {
     align-items: center;
     padding: 0 0.75rem;
     transition: background-color 0.1s;
+    contain: content;
 }
 
 .hex-row:hover {

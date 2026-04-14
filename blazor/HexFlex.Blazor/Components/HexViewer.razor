@@ -5,52 +5,15 @@
 <div class="hex-viewer" id="@_elementId">
     <div class="hex-viewer-header-row">
         <span class="hex-hdr-addr">ADDRESS</span>
-        <span class="hex-hdr-bytes">@_hexHeader</span>
+        <span class="hex-hdr-bytes hex-bytes">@foreach (var i in _byteOffsets)
+        {
+            <span class="hex-byte hex-byte-hdr">@(i.ToString("X2"))</span>
+        }</span>
         <span class="hex-hdr-ascii">ASCII</span>
     </div>
     <div class="hex-viewer-scroll" id="@(_elementId + "-scroll")">
-        <div class="hex-viewer-scroll-content" style="height: @(_totalHeight)px;">
-            @if (_visibleEntries != null)
-            {
-                @foreach (var entry in _visibleEntries)
-                {
-                    var translateY = entry.GlobalRowIndex * RowHeightPx;
-
-                    @if (entry.IsGap)
-                    {
-                        <div class="hex-row hex-row-gap" style="transform: translateY(@(translateY)px);"
-                             data-testid="gap-row"
-                             title="Skipped addresses from 0x@(entry.GapStart.ToString("X8")) to 0x@(entry.GapEnd.ToString("X8"))">
-                            <span class="hex-gap-text">
-                                &#x2022;&#x2022;&#x2022; GAP: @FormatBytes(entry.GapEnd - entry.GapStart + 1) SKIPPED &#x2022;&#x2022;&#x2022;
-                            </span>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="hex-row" style="transform: translateY(@(translateY)px);"
-                             data-testid="data-row" data-address="@(entry.Address.ToString("X8"))">
-                            <span class="hex-addr">@(entry.Address.ToString("X8"))</span>
-                            <span class="hex-bytes">@foreach (var j in _byteOffsets)
-                            {
-                                var addr = entry.Address + j;
-                                var b = Memory.GetByte(addr);
-                                var isHighlighted = _highlightedAddress == addr;
-                                <span class="hex-byte @(b.HasValue ? "" : "hex-byte-empty") @(isHighlighted ? "hex-byte-hl" : "")"
-                                      data-addr="@(addr.ToString("X8"))">@(b.HasValue ? b.Value.ToString("X2") : "..")</span>
-                            }</span>
-                            <span class="hex-ascii">@foreach (var j in _byteOffsets)
-                            {
-                                var addr = entry.Address + j;
-                                var b = Memory.GetByte(addr);
-                                var isHighlighted = _highlightedAddress == addr;
-                                var isPrintable = b.HasValue && b.Value >= 32 && b.Value <= 126;
-                                <span class="hex-asc @(isPrintable ? "hex-asc-print" : "") @(isHighlighted ? "hex-byte-hl" : "")">@(isPrintable ? ((char)b!.Value).ToString() : ".")</span>
-                            }</span>
-                        </div>
-                    }
-                }
-            }
+        <div class="hex-viewer-scroll-content">
+            @* All row rendering handled by JS — zero C# interop during scrolling *@
         </div>
     </div>
 </div>
@@ -60,8 +23,6 @@
     private const int BytesPerRow = 16;
     private const int BufferRows = 15;
 
-    private static readonly string _hexHeader = string.Join(" ",
-        Enumerable.Range(0, BytesPerRow).Select(i => i.ToString("X2")));
     private static readonly int[] _byteOffsets = Enumerable.Range(0, BytesPerRow).ToArray();
 
     [Parameter] public SparseMemory Memory { get; set; } = default!;
@@ -69,53 +30,118 @@
     [Parameter] public int ActiveSegmentIndex { get; set; }
 
     private string _elementId = $"hex-viewer-{Guid.NewGuid():N}";
+    private string _scrollElementId => _elementId + "-scroll";
     private DotNetObjectReference<HexViewer>? _dotNetRef;
-
-    // Compact layout: one entry per segment + one per gap (typically 3-5 entries total!)
-    private LayoutEntry[] _layout = Array.Empty<LayoutEntry>();
-    private int _totalRowCount;
-    private long _totalHeight;
-
-    private List<VisibleEntry>? _visibleEntries;
-    private double _scrollTop;
-    private double _viewportHeight;
-    private long? _highlightedAddress;
-    private System.Threading.Timer? _highlightTimer;
+    private bool _jsInitialized;
     private SparseMemory? _lastMemory;
 
+    // Layout data (kept in C# for GoToAddress calculations)
+    private LayoutEntry[] _layout = Array.Empty<LayoutEntry>();
+    private int _totalRowCount;
     private List<MemorySegment> _segments = new();
-
-    protected override void OnParametersSet()
-    {
-        if (Memory != null && Memory != _lastMemory)
-        {
-            _lastMemory = Memory;
-            BuildLayout();
-            UpdateVisibleEntries();
-        }
-    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
             _dotNetRef = DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("hexFlexHexViewer.init", _elementId + "-scroll", _dotNetRef);
+            await JS.InvokeVoidAsync("hexFlexHexViewer.init", _scrollElementId, _dotNetRef);
+            _jsInitialized = true;
+
+            if (Memory != null && Memory != _lastMemory)
+            {
+                _lastMemory = Memory;
+                await SendDataToJs();
+            }
         }
     }
 
-    /// <summary>
-    /// Build a compact layout: one LayoutEntry per segment and one per gap.
-    /// For 3 segments this creates ~5 entries instead of ~47,000 row objects.
-    /// </summary>
-    private void BuildLayout()
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Memory != null && Memory != _lastMemory && _jsInitialized)
+        {
+            _lastMemory = Memory;
+            await SendDataToJs();
+        }
+    }
+
+    private async Task SendDataToJs()
     {
         _segments = Memory.GetDataSegments();
+        BuildLayout();
+
+        // Serialize layout as JSON
+        var layoutJson = SerializeLayout();
+
+        // Extract byte data per segment as arrays
+        var segmentDataArrays = new byte[_segments.Count][];
+        var segmentValidityArrays = new byte[_segments.Count][];
+
+        for (int segIdx = 0; segIdx < _segments.Count; segIdx++)
+        {
+            var seg = _segments[segIdx];
+            long alignedStart = AlignDown(seg.Start);
+            long alignedEnd = AlignDown(seg.End);
+            int rowCount = (int)((alignedEnd - alignedStart) / BytesPerRow) + 1;
+            int byteCount = rowCount * BytesPerRow;
+
+            var data = new byte[byteCount];
+            var validity = new byte[byteCount];
+
+            for (int i = 0; i < byteCount; i++)
+            {
+                long addr = alignedStart + i;
+                var b = Memory.GetByte(addr);
+                if (b.HasValue)
+                {
+                    data[i] = b.Value;
+                    validity[i] = 1;
+                }
+            }
+
+            segmentDataArrays[segIdx] = data;
+            segmentValidityArrays[segIdx] = validity;
+        }
+
+        await JS.InvokeVoidAsync("hexFlexHexViewer.setData",
+            _scrollElementId, layoutJson, segmentDataArrays, segmentValidityArrays);
+    }
+
+    private string SerializeLayout()
+    {
+        var sb = new System.Text.StringBuilder(512);
+        sb.Append("{\"totalRowCount\":").Append(_totalRowCount).Append(",\"entries\":[");
+
+        for (int i = 0; i < _layout.Length; i++)
+        {
+            if (i > 0) sb.Append(',');
+            var le = _layout[i];
+            sb.Append("{\"isGap\":").Append(le.IsGap ? "true" : "false");
+            sb.Append(",\"globalRowStart\":").Append(le.GlobalRowStart);
+            sb.Append(",\"rowCount\":").Append(le.RowCount);
+            sb.Append(",\"segmentIndex\":").Append(le.SegmentIndex);
+
+            if (le.IsGap)
+            {
+                sb.Append(",\"gapStartAddr\":").Append(le.GapStartAddr);
+                sb.Append(",\"gapEndAddr\":").Append(le.GapEndAddr);
+            }
+            else
+            {
+                sb.Append(",\"segStartAddr\":").Append(le.SegStartAddr);
+            }
+            sb.Append('}');
+        }
+        sb.Append("]}");
+        return sb.ToString();
+    }
+
+    private void BuildLayout()
+    {
         if (_segments.Count == 0)
         {
             _layout = Array.Empty<LayoutEntry>();
             _totalRowCount = 0;
-            _totalHeight = 0;
             return;
         }
 
@@ -126,7 +152,6 @@
         {
             var seg = _segments[segIdx];
 
-            // Gap before this segment
             if (segIdx > 0)
             {
                 var prev = _segments[segIdx - 1];
@@ -147,7 +172,6 @@
                 }
             }
 
-            // Data rows for this segment
             long segAlignedStart = AlignDown(seg.Start);
             long segAlignedEnd = AlignDown(seg.End);
             int rowCount = (int)((segAlignedEnd - segAlignedStart) / BytesPerRow) + 1;
@@ -165,200 +189,43 @@
 
         _layout = entries.ToArray();
         _totalRowCount = runningRow;
-        _totalHeight = (long)_totalRowCount * RowHeightPx;
-    }
-
-    /// <summary>
-    /// Compute visible entries on-the-fly from the compact layout.
-    /// Only creates objects for the ~45 rows actually on screen.
-    /// </summary>
-    private void UpdateVisibleEntries()
-    {
-        if (_totalRowCount == 0)
-        {
-            _visibleEntries = null;
-            return;
-        }
-
-        double vh = _viewportHeight > 0 ? _viewportHeight : 400;
-        int firstRow = Math.Max(0, (int)Math.Floor(_scrollTop / RowHeightPx) - BufferRows);
-        int maxVisible = (int)Math.Ceiling(vh / RowHeightPx) + 2 * BufferRows;
-        int lastRow = Math.Min(_totalRowCount - 1, firstRow + maxVisible);
-        // Safety: never render more than a screenful + buffer
-        if (lastRow - firstRow > 200) lastRow = firstRow + 200;
-
-        var entries = new List<VisibleEntry>(lastRow - firstRow + 1);
-
-        for (int globalRow = firstRow; globalRow <= lastRow; globalRow++)
-        {
-            // Find which layout entry this row belongs to (binary search)
-            var le = FindLayoutEntry(globalRow);
-            if (le.IsGap)
-            {
-                entries.Add(new VisibleEntry
-                {
-                    GlobalRowIndex = globalRow,
-                    IsGap = true,
-                    GapStart = le.GapStartAddr,
-                    GapEnd = le.GapEndAddr
-                });
-            }
-            else
-            {
-                int offsetInSegment = globalRow - le.GlobalRowStart;
-                long address = le.SegStartAddr + (long)offsetInSegment * BytesPerRow;
-                entries.Add(new VisibleEntry
-                {
-                    GlobalRowIndex = globalRow,
-                    IsGap = false,
-                    Address = address,
-                    SegmentIndex = le.SegmentIndex
-                });
-            }
-        }
-
-        _visibleEntries = entries;
-    }
-
-    private LayoutEntry FindLayoutEntry(int globalRow)
-    {
-        // Binary search: find the last layout entry whose GlobalRowStart <= globalRow
-        int lo = 0, hi = _layout.Length - 1;
-        while (lo < hi)
-        {
-            int mid = lo + (hi - lo + 1) / 2;
-            if (_layout[mid].GlobalRowStart <= globalRow)
-                lo = mid;
-            else
-                hi = mid - 1;
-        }
-        return _layout[lo];
     }
 
     [JSInvokable]
-    public void OnScrollFromJs(double scrollTop, double clientHeight)
+    public void OnActiveSegmentChangedFromJs(int segmentIndex)
     {
-        _scrollTop = scrollTop;
-        _viewportHeight = clientHeight;
-        UpdateVisibleEntries();
-        UpdateActiveSegment();
-        StateHasChanged();
-    }
-
-    [JSInvokable]
-    public void OnResizeFromJs(double scrollTop, double clientHeight)
-    {
-        _scrollTop = scrollTop;
-        _viewportHeight = clientHeight;
-        UpdateVisibleEntries();
-        StateHasChanged();
-    }
-
-    private void UpdateActiveSegment()
-    {
-        if (_segments.Count <= 1) return;
-
-        int centerRow = (int)((_scrollTop + _viewportHeight / 2) / RowHeightPx);
-        var le = FindLayoutEntry(centerRow);
-        int newSegment = le.SegmentIndex >= 0 ? le.SegmentIndex : 0;
-
-        if (newSegment != ActiveSegmentIndex)
+        if (segmentIndex != ActiveSegmentIndex)
         {
-            OnActiveSegmentChanged.InvokeAsync(newSegment);
+            OnActiveSegmentChanged.InvokeAsync(segmentIndex);
         }
     }
 
     public async Task GoToAddress(long address)
     {
-        long rowAddr = AlignDown(address);
-        int targetIndex = -1;
-
-        foreach (var le in _layout)
-        {
-            if (le.IsGap)
-            {
-                if (address >= le.GapStartAddr && address <= le.GapEndAddr)
-                {
-                    targetIndex = le.GlobalRowStart;
-                    break;
-                }
-            }
-            else
-            {
-                long segEnd = le.SegStartAddr + (long)(le.RowCount - 1) * BytesPerRow;
-                if (rowAddr >= le.SegStartAddr && rowAddr <= segEnd)
-                {
-                    int offset = (int)((rowAddr - le.SegStartAddr) / BytesPerRow);
-                    targetIndex = le.GlobalRowStart + offset;
-                    break;
-                }
-            }
-        }
-
-        if (targetIndex >= 0)
-        {
-            double newScrollTop = targetIndex * RowHeightPx;
-            _scrollTop = newScrollTop;
-            await JS.InvokeVoidAsync("hexFlexHexViewer.scrollTo", _elementId + "-scroll", newScrollTop);
-
-            _highlightedAddress = address;
-            _highlightTimer?.Dispose();
-            _highlightTimer = new System.Threading.Timer(_ =>
-            {
-                _highlightedAddress = null;
-                InvokeAsync(StateHasChanged);
-            }, null, 2000, System.Threading.Timeout.Infinite);
-
-            UpdateVisibleEntries();
-            StateHasChanged();
-        }
+        // All logic (layout lookup, scroll, highlight) runs in JS — no interop delay
+        await JS.InvokeVoidAsync("hexFlexHexViewer.goToAddress", _scrollElementId, (double)address);
     }
 
     private static long AlignDown(long address) => (address / BytesPerRow) * BytesPerRow;
 
-    private static string FormatBytes(long bytes)
-    {
-        if (bytes == 0) return "0 Bytes";
-        string[] sizes = { "Bytes", "KB", "MB", "GB" };
-        int i = (int)Math.Floor(Math.Log(bytes) / Math.Log(1024));
-        if (i >= sizes.Length) i = sizes.Length - 1;
-        double value = bytes / Math.Pow(1024, i);
-        return $"{value:F2} {sizes[i]}";
-    }
-
     public async ValueTask DisposeAsync()
     {
-        _highlightTimer?.Dispose();
         try
         {
-            await JS.InvokeVoidAsync("hexFlexHexViewer.dispose", _elementId + "-scroll");
+            await JS.InvokeVoidAsync("hexFlexHexViewer.dispose", _scrollElementId);
         }
         catch (JSDisconnectedException) { }
         _dotNetRef?.Dispose();
     }
 
-    // Compact layout entry — one per segment or gap (~5 total for a typical file)
     private struct LayoutEntry
     {
         public bool IsGap;
         public int GlobalRowStart;
         public int RowCount;
-        // For data segments:
         public long SegStartAddr;
         public int SegmentIndex;
-        // For gaps:
         public long GapStartAddr;
         public long GapEndAddr;
-    }
-
-    // Lightweight entry for currently visible rows (~45 at a time)
-    private struct VisibleEntry
-    {
-        public int GlobalRowIndex;
-        public bool IsGap;
-        public long Address;
-        public int SegmentIndex;
-        public long GapStart;
-        public long GapEnd;
     }
 }

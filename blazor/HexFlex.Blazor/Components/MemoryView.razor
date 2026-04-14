@@ -67,15 +67,28 @@
     [Parameter] public string FileName { get; set; } = "";
     [Parameter] public EventCallback OnLoadNew { get; set; }
 
-    private long StartAddress => Memory.GetStartAddress();
-    private long EndAddress => Memory.GetEndAddress();
-    private long DataSize => Memory.GetDataSize();
-    private List<MemorySegment> Segments => Memory.GetDataSegments();
+    private SparseMemory? _lastMemory;
+    private long StartAddress;
+    private long EndAddress;
+    private long DataSize;
+    private List<MemorySegment> Segments = new();
 
     private int ActiveSegmentIndex { get; set; }
     private string AddressInput { get; set; } = "";
     private string? InputError { get; set; }
     private HexViewer? _hexViewer;
+
+    protected override void OnParametersSet()
+    {
+        if (Memory != null && Memory != _lastMemory)
+        {
+            _lastMemory = Memory;
+            StartAddress = Memory.GetStartAddress();
+            EndAddress = Memory.GetEndAddress();
+            DataSize = Memory.GetDataSize();
+            Segments = Memory.GetDataSegments();
+        }
+    }
 
     private async Task HandleGoToAddress()
     {
@@ -125,8 +138,11 @@
 
     private void HandleActiveSegmentChanged(int segmentIndex)
     {
-        ActiveSegmentIndex = segmentIndex;
-        StateHasChanged();
+        if (segmentIndex != ActiveSegmentIndex)
+        {
+            ActiveSegmentIndex = segmentIndex;
+            StateHasChanged();
+        }
     }
 
     private void ClearError()
