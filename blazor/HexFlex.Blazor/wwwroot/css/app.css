@@ -722,11 +722,18 @@ html, body {
 }
 
 /* Scrollable area — height set by JS in hexViewer.js based on viewport */
+/* Scrollbar hidden — minimap serves as the scroll indicator/navigator */
 .hex-viewer-scroll {
-    overflow-y: auto;
+    overflow-y: scroll;
     overflow-x: hidden;
     position: relative;
     height: 200px; /* default, JS overrides with actual available space */
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+}
+
+.hex-viewer-scroll::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
 }
 
 .hex-viewer-scroll-content {
