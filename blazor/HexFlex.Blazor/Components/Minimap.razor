@@ -1,0 +1,184 @@
+@using HexFlex.Blazor.Services
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div class="minimap" aria-label="Interactive memory map navigator">
+    <canvas id="@_canvasId" class="minimap-canvas"></canvas>
+</div>
+
+@code {
+    [Parameter] public SparseMemory Memory { get; set; } = default!;
+    [Parameter] public string ScrollContainerId { get; set; } = "";
+
+    private string _canvasId = $"minimap-canvas-{Guid.NewGuid():N}";
+    private bool _jsInitialized;
+    private SparseMemory? _lastMemory;
+
+    private const int BytesPerRow = 16;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("hexFlexMinimap.init", _canvasId, ScrollContainerId);
+            _jsInitialized = true;
+
+            if (Memory != null && Memory != _lastMemory)
+            {
+                _lastMemory = Memory;
+                await SendDataToJs();
+            }
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Memory != null && Memory != _lastMemory && _jsInitialized)
+        {
+            _lastMemory = Memory;
+            await SendDataToJs();
+        }
+    }
+
+    private async Task SendDataToJs()
+    {
+        var segments = Memory.GetDataSegments();
+        var layout = BuildLayout(segments);
+
+        var layoutJson = SerializeLayout(layout.entries, layout.totalRowCount);
+
+        // Extract byte data per segment (same as HexViewer)
+        var segmentDataArrays = new byte[segments.Count][];
+        var segmentValidityArrays = new byte[segments.Count][];
+
+        for (int segIdx = 0; segIdx < segments.Count; segIdx++)
+        {
+            var seg = segments[segIdx];
+            long alignedStart = AlignDown(seg.Start);
+            long alignedEnd = AlignDown(seg.End);
+            int rowCount = (int)((alignedEnd - alignedStart) / BytesPerRow) + 1;
+            int byteCount = rowCount * BytesPerRow;
+
+            var data = new byte[byteCount];
+            var validity = new byte[byteCount];
+
+            for (int i = 0; i < byteCount; i++)
+            {
+                long addr = alignedStart + i;
+                var b = Memory.GetByte(addr);
+                if (b.HasValue)
+                {
+                    data[i] = b.Value;
+                    validity[i] = 1;
+                }
+            }
+
+            segmentDataArrays[segIdx] = data;
+            segmentValidityArrays[segIdx] = validity;
+        }
+
+        await JS.InvokeVoidAsync("hexFlexMinimap.setData",
+            _canvasId, layoutJson, segmentDataArrays, segmentValidityArrays);
+    }
+
+    private (List<LayoutEntry> entries, int totalRowCount) BuildLayout(List<MemorySegment> segments)
+    {
+        if (segments.Count == 0)
+            return (new List<LayoutEntry>(), 0);
+
+        var entries = new List<LayoutEntry>();
+        int runningRow = 0;
+
+        for (int segIdx = 0; segIdx < segments.Count; segIdx++)
+        {
+            var seg = segments[segIdx];
+
+            if (segIdx > 0)
+            {
+                var prev = segments[segIdx - 1];
+                long gapStart = prev.End + 1;
+                long gapEnd = seg.Start - 1;
+                if (gapEnd >= gapStart)
+                {
+                    entries.Add(new LayoutEntry
+                    {
+                        IsGap = true,
+                        GlobalRowStart = runningRow,
+                        RowCount = 1,
+                        GapStartAddr = gapStart,
+                        GapEndAddr = gapEnd,
+                        SegmentIndex = -1
+                    });
+                    runningRow += 1;
+                }
+            }
+
+            long segAlignedStart = AlignDown(seg.Start);
+            long segAlignedEnd = AlignDown(seg.End);
+            int rowCount = (int)((segAlignedEnd - segAlignedStart) / BytesPerRow) + 1;
+
+            entries.Add(new LayoutEntry
+            {
+                IsGap = false,
+                GlobalRowStart = runningRow,
+                RowCount = rowCount,
+                SegStartAddr = segAlignedStart,
+                SegmentIndex = segIdx
+            });
+            runningRow += rowCount;
+        }
+
+        return (entries, runningRow);
+    }
+
+    private string SerializeLayout(List<LayoutEntry> entries, int totalRowCount)
+    {
+        var sb = new System.Text.StringBuilder(512);
+        sb.Append("{\"totalRowCount\":").Append(totalRowCount).Append(",\"entries\":[");
+
+        for (int i = 0; i < entries.Count; i++)
+        {
+            if (i > 0) sb.Append(',');
+            var le = entries[i];
+            sb.Append("{\"isGap\":").Append(le.IsGap ? "true" : "false");
+            sb.Append(",\"globalRowStart\":").Append(le.GlobalRowStart);
+            sb.Append(",\"rowCount\":").Append(le.RowCount);
+            sb.Append(",\"segmentIndex\":").Append(le.SegmentIndex);
+
+            if (le.IsGap)
+            {
+                sb.Append(",\"gapStartAddr\":").Append(le.GapStartAddr);
+                sb.Append(",\"gapEndAddr\":").Append(le.GapEndAddr);
+            }
+            else
+            {
+                sb.Append(",\"segStartAddr\":").Append(le.SegStartAddr);
+            }
+            sb.Append('}');
+        }
+        sb.Append("]}");
+        return sb.ToString();
+    }
+
+    private static long AlignDown(long address) => (address / BytesPerRow) * BytesPerRow;
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("hexFlexMinimap.dispose", _canvasId);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private struct LayoutEntry
+    {
+        public bool IsGap;
+        public int GlobalRowStart;
+        public int RowCount;
+        public long SegStartAddr;
+        public int SegmentIndex;
+        public long GapStartAddr;
+        public long GapEndAddr;
+    }
+}

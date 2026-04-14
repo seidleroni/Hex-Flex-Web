@@ -31,6 +31,9 @@
 
     private string _elementId = $"hex-viewer-{Guid.NewGuid():N}";
     private string _scrollElementId => _elementId + "-scroll";
+
+    /// <summary>The DOM id of the scroll container, for use by Minimap.</summary>
+    public string ScrollContainerId => _scrollElementId;
     private DotNetObjectReference<HexViewer>? _dotNetRef;
     private bool _jsInitialized;
     private SparseMemory? _lastMemory;

@@ -49,6 +49,11 @@
                        Memory="Memory"
                        ActiveSegmentIndex="ActiveSegmentIndex"
                        OnActiveSegmentChanged="HandleActiveSegmentChanged" />
+            @if (_hexViewer != null)
+            {
+                <Minimap Memory="Memory"
+                         ScrollContainerId="@_hexViewer.ScrollContainerId" />
+            }
         </div>
     }
     else
@@ -58,8 +63,15 @@
                        Memory="Memory"
                        ActiveSegmentIndex="0"
                        OnActiveSegmentChanged="HandleActiveSegmentChanged" />
+            @if (_hexViewer != null)
+            {
+                <Minimap Memory="Memory"
+                         ScrollContainerId="@_hexViewer.ScrollContainerId" />
+            }
         </div>
     }
+
+    <MinimapLegend />
 </div>
 
 @code {
@@ -78,6 +90,17 @@
     private string? InputError { get; set; }
     private HexViewer? _hexViewer;
 
+    private bool _needsMinimapRender;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (_needsMinimapRender && _hexViewer != null)
+        {
+            _needsMinimapRender = false;
+            StateHasChanged();
+        }
+    }
+
     protected override void OnParametersSet()
     {
         if (Memory != null && Memory != _lastMemory)
@@ -87,6 +110,7 @@
             EndAddress = Memory.GetEndAddress();
             DataSize = Memory.GetDataSize();
             Segments = Memory.GetDataSegments();
+            _needsMinimapRender = true;
         }
     }
 
