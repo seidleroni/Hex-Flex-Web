@@ -297,111 +297,11 @@ function computePixelColors(state) {
     return colors;
 }
 
-// Map a minimap row index to a HexViewer scrollTop value.
-// The minimap has expanded gaps; the HexViewer has collapsed gaps.
-// We find the address at the minimap row, then look up the corresponding
-// HexViewer row for that address.
-function mmRowToHvScrollTop(state, mmRow) {
-    if (!state.mmRuns || state.mmRuns.length === 0) return 0;
 
-    var run = findMmRun(state.mmRuns, mmRow);
-    if (!run) return 0;
-
-    // Find the address at this minimap row
-    var offsetInRun = mmRow - run.globalRowStart;
-    var addr;
-
-    if (run.type === 'gap') {
-        // Collapsed gap — map to the start of the next segment
-        addr = run.endAddr + 1;
-    } else {
-        addr = run.startAddr + offsetInRun * BYTES_PER_ROW;
-    }
-
-    // Now find which HexViewer layout entry contains this address
-    var hvLayout = state.hvLayout;
-    for (var i = 0; i < hvLayout.length; i++) {
-        var le = hvLayout[i];
-        if (le.isGap) {
-            if (addr >= le.gapStartAddr && addr <= le.gapEndAddr) {
-                // Address is in a gap — scroll to the gap row
-                return le.globalRowStart * ROW_HEIGHT;
-            }
-        } else {
-            var segEnd = le.segStartAddr + (le.rowCount - 1) * BYTES_PER_ROW;
-            if (addr >= le.segStartAddr && addr <= segEnd + BYTES_PER_ROW - 1) {
-                var rowOffset = Math.floor((addr - le.segStartAddr) / BYTES_PER_ROW);
-                return (le.globalRowStart + rowOffset) * ROW_HEIGHT;
-            }
-        }
-    }
-
-    // Address is in expanded gap (not present in HexViewer) — find nearest segment
-    // Find the segment that comes after this address
-    for (var i = 0; i < hvLayout.length; i++) {
-        var le = hvLayout[i];
-        if (!le.isGap && le.segStartAddr > addr) {
-            return le.globalRowStart * ROW_HEIGHT;
-        }
-    }
-
-    // Fallback: scroll to end
-    return (state.hvTotalRowCount - 1) * ROW_HEIGHT;
-}
-
-// Map HexViewer scrollTop to a minimap row fraction (for viewport indicator)
-function hvScrollTopToMmFraction(state, scrollTop) {
-    if (!state.hvLayout || state.hvLayout.length === 0 || state.mmTotalRows === 0) return 0;
-
-    var hvRow = scrollTop / ROW_HEIGHT;
-    var hvLayout = state.hvLayout;
-
-    // Find which HexViewer layout entry this row is in
-    var le = findHvEntry(hvLayout, Math.floor(hvRow));
-    if (!le) return 0;
-
-    // Get the address at this HexViewer row
-    var addr;
-    if (le.isGap) {
-        addr = le.gapStartAddr;
-    } else {
-        var offset = Math.floor(hvRow) - le.globalRowStart;
-        addr = le.segStartAddr + offset * BYTES_PER_ROW;
-    }
-
-    // Now find which minimap run contains this address
-    var runs = state.mmRuns;
-    for (var i = 0; i < runs.length; i++) {
-        var run = runs[i];
-        var runEndAddr;
-        if (run.type === 'gap') {
-            runEndAddr = run.endAddr;
-        } else {
-            runEndAddr = run.startAddr + (run.rowCount - 1) * BYTES_PER_ROW + BYTES_PER_ROW - 1;
-        }
-
-        if (addr >= run.startAddr && addr <= runEndAddr) {
-            var rowInRun = Math.floor((addr - run.startAddr) / BYTES_PER_ROW);
-            if (run.type === 'gap') rowInRun = 0;
-            var mmRow = run.globalRowStart + Math.min(rowInRun, run.rowCount - 1);
-            return mmRow / state.mmTotalRows;
-        }
-    }
-
-    return 0;
-}
-
-function findHvEntry(layout, globalRow) {
-    var lo = 0, hi = layout.length - 1;
-    while (lo < hi) {
-        var mid = lo + ((hi - lo + 1) >> 1);
-        if (layout[mid].globalRowStart <= globalRow) lo = mid;
-        else hi = mid - 1;
-    }
-    return layout[lo];
-}
-
-// Click/drag handlers — map canvas Y to minimap row, then to HexViewer scroll
+// Click/drag handlers — linear mapping from canvas Y to HexViewer scroll.
+// The visual (pixel colors) shows the address space proportionally, but the
+// interaction behaves like a standard scrollbar: clicking at Y% scrolls to Y%.
+// This avoids jarring jumps when clicking in gap regions.
 function handlePointerDown(state, e) {
     var canvas = state.canvas;
     var sc = state.scrollContainer;
@@ -419,11 +319,10 @@ function handlePointerDown(state, e) {
     var mapHeight = canvas.height;
     var clickY = (clientY - rect.top) * (canvas.height / rect.height);
 
-    // Viewport indicator position in minimap coordinates
-    var vpFrac = hvScrollTopToMmFraction(state, sc.scrollTop);
-    var vpHeightFrac = hvScrollTopToMmFraction(state, sc.scrollTop + viewportHeight) - vpFrac;
-    var thumbTop = vpFrac * mapHeight;
-    var thumbHeight = Math.max(2, vpHeightFrac * mapHeight);
+    // Viewport indicator uses linear mapping
+    var maxScroll = hvTotalHeight - viewportHeight;
+    var thumbHeight = Math.max(2, (viewportHeight / hvTotalHeight) * mapHeight);
+    var thumbTop = (sc.scrollTop / maxScroll) * (mapHeight - thumbHeight);
 
     if (clickY >= thumbTop && clickY <= thumbTop + thumbHeight) {
         state.dragOffset = clickY - thumbTop;
@@ -431,7 +330,7 @@ function handlePointerDown(state, e) {
         state.dragOffset = thumbHeight / 2;
     }
 
-    navigateFromCanvasY(state, clickY);
+    navigateLinear(state, clickY, mapHeight);
 }
 
 function handlePointerMove(state, e) {
@@ -445,22 +344,21 @@ function handlePointerMove(state, e) {
     var rect = canvas.getBoundingClientRect();
     var clickY = (clientY - rect.top) * (canvas.height / rect.height);
 
-    navigateFromCanvasY(state, clickY);
+    navigateLinear(state, clickY, canvas.height);
 }
 
-function navigateFromCanvasY(state, clickY) {
-    var mapHeight = state.canvas.height;
-    var adjustedY = clickY - state.dragOffset;
-    var fraction = adjustedY / mapHeight;
-    fraction = Math.max(0, Math.min(1, fraction));
-
-    var mmRow = Math.floor(fraction * state.mmTotalRows);
-    mmRow = Math.max(0, Math.min(mmRow, state.mmTotalRows - 1));
-
-    var scrollTop = mmRowToHvScrollTop(state, mmRow);
+function navigateLinear(state, clickY, mapHeight) {
     var sc = state.scrollContainer;
     var hvTotalHeight = state.hvTotalRowCount * ROW_HEIGHT;
-    sc.scrollTop = Math.max(0, Math.min(scrollTop, hvTotalHeight - sc.clientHeight));
+    var viewportHeight = sc.clientHeight;
+    var maxScroll = hvTotalHeight - viewportHeight;
+    var thumbHeight = Math.max(2, (viewportHeight / hvTotalHeight) * mapHeight);
+
+    var adjustedY = clickY - state.dragOffset;
+    var fraction = adjustedY / (mapHeight - thumbHeight);
+    fraction = Math.max(0, Math.min(1, fraction));
+
+    sc.scrollTop = fraction * maxScroll;
 }
 
 function getClientY(e) {
@@ -509,21 +407,20 @@ function drawMinimap(state) {
         }
     }
 
-    // Draw viewport indicator — map HexViewer scroll position to minimap space
+    // Draw viewport indicator — linear mapping from HexViewer scroll position
     var sc = state.scrollContainer;
     var viewportHeight = sc.clientHeight;
     var hvTotalHeight = state.hvTotalRowCount * ROW_HEIGHT;
 
     if (hvTotalHeight > 0 && viewportHeight > 0) {
-        var vpTopFrac = hvScrollTopToMmFraction(state, sc.scrollTop);
-        var vpBottomFrac = hvScrollTopToMmFraction(state, sc.scrollTop + viewportHeight);
-        var vpTop = vpTopFrac * h;
-        var vpH = Math.max(2, (vpBottomFrac - vpTopFrac) * h);
+        var maxScroll = hvTotalHeight - viewportHeight;
+        var thumbH = Math.max(2, (viewportHeight / hvTotalHeight) * h);
+        var vpTop = maxScroll > 0 ? (sc.scrollTop / maxScroll) * (h - thumbH) : 0;
 
         ctx.fillStyle = mm.VIEWPORT_FILL;
         ctx.strokeStyle = mm.VIEWPORT_BORDER;
         ctx.lineWidth = 1;
-        ctx.fillRect(0.5, vpTop + 0.5, w - 1, vpH - 1);
-        ctx.strokeRect(0.5, vpTop + 0.5, w - 1, vpH - 1);
+        ctx.fillRect(0.5, vpTop + 0.5, w - 1, thumbH - 1);
+        ctx.strokeRect(0.5, vpTop + 0.5, w - 1, thumbH - 1);
     }
 }
