@@ -5,60 +5,115 @@
 
 <PageTitle>Hex Flex - Compare</PageTitle>
 
-<div class="upload-section" style="max-width:64rem;">
-    <div style="margin-bottom:2rem;">
-        <h2 class="upload-heading">Compare Intel HEX Files</h2>
-        <p class="upload-subheading">Upload two Intel HEX files to compare their memory content.</p>
-    </div>
+@if (_comparison is null)
+{
+    <div class="upload-section" style="max-width:64rem;">
+        <div style="margin-bottom:2rem;">
+            <h2 class="upload-heading">Compare Intel HEX Files</h2>
+            <p class="upload-subheading">Upload two Intel HEX files to compare their memory content.</p>
+        </div>
 
-    <div class="compare-upload-grid">
-        @* File A *@
-        <div class="compare-upload-slot">
-            <h3>File A (Original)</h3>
-            @if (MemoryA is not null)
-            {
+        <div class="compare-upload-grid">
+            @* File A *@
+            <div class="compare-upload-slot">
+                <h3>File A (Original)</h3>
+                @if (MemoryA is not null)
+                {
+                    <FileInfoCard FileName="@FileNameA"
+                                  StartAddress="_startAddressA"
+                                  DataSize="_dataSizeA"
+                                  SegmentCount="_segmentCountA"
+                                  OnLoadNew="ResetA" />
+                }
+                else
+                {
+                    <FileUpload OnFileSelected="HandleFileASelected" />
+                    @if (ErrorA is not null)
+                    {
+                        <div class="error-alert" role="alert">
+                            <strong>Error: </strong><span>@ErrorA</span>
+                        </div>
+                    }
+                }
+            </div>
+
+            @* File B *@
+            <div class="compare-upload-slot">
+                <h3>File B (Modified)</h3>
+                @if (MemoryB is not null)
+                {
+                    <FileInfoCard FileName="@FileNameB"
+                                  StartAddress="_startAddressB"
+                                  DataSize="_dataSizeB"
+                                  SegmentCount="_segmentCountB"
+                                  OnLoadNew="ResetB" />
+                }
+                else
+                {
+                    <FileUpload OnFileSelected="HandleFileBSelected" />
+                    @if (ErrorB is not null)
+                    {
+                        <div class="error-alert" role="alert">
+                            <strong>Error: </strong><span>@ErrorB</span>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="comparison-view">
+        @* Compact file info + upload slots *@
+        <div class="compare-upload-grid" style="margin-bottom:0.5rem;">
+            <div class="compare-upload-slot">
+                <h3>File A (Original)</h3>
                 <FileInfoCard FileName="@FileNameA"
                               StartAddress="_startAddressA"
                               DataSize="_dataSizeA"
                               SegmentCount="_segmentCountA"
                               OnLoadNew="ResetA" />
-            }
-            else
-            {
-                <FileUpload OnFileSelected="HandleFileASelected" />
-                @if (ErrorA is not null)
-                {
-                    <div class="error-alert" role="alert">
-                        <strong>Error: </strong><span>@ErrorA</span>
-                    </div>
-                }
-            }
-        </div>
-
-        @* File B *@
-        <div class="compare-upload-slot">
-            <h3>File B (Modified)</h3>
-            @if (MemoryB is not null)
-            {
+            </div>
+            <div class="compare-upload-slot">
+                <h3>File B (Modified)</h3>
                 <FileInfoCard FileName="@FileNameB"
                               StartAddress="_startAddressB"
                               DataSize="_dataSizeB"
                               SegmentCount="_segmentCountB"
                               OnLoadNew="ResetB" />
-            }
-            else
+            </div>
+        </div>
+
+        <DiffStatistics Stats="_comparison.Stats" />
+        <DiffLegend />
+
+        <div class="comparison-content">
+            @if (_segments.Count > 1)
             {
-                <FileUpload OnFileSelected="HandleFileBSelected" />
-                @if (ErrorB is not null)
-                {
-                    <div class="error-alert" role="alert">
-                        <strong>Error: </strong><span>@ErrorB</span>
-                    </div>
-                }
+                <SegmentPanel Segments="_compSegmentsMapped"
+                              ActiveSegmentIndex="_activeSegmentIndex"
+                              OnSegmentClick="HandleSegmentClick" />
+            }
+            <ComparisonHexViewer @ref="_compHexViewer"
+                                 Comparison="_comparison"
+                                 ActiveSegmentIndex="_activeSegmentIndex"
+                                 OnActiveSegmentChanged="HandleActiveSegmentChanged" />
+            @if (_compHexViewer != null)
+            {
+                <ComparisonMinimap Comparison="_comparison"
+                                   ScrollContainerId="@_compHexViewer.ScrollContainerId" />
+            }
+            @if (_diffAddresses.Count > 0)
+            {
+                <DiffNavigator OnPrev="HandlePrevDiff"
+                               OnNext="HandleNextDiff"
+                               IsPrevDisabled="_isPrevDisabled"
+                               IsNextDisabled="_isNextDisabled" />
             }
         </div>
     </div>
-</div>
+}
 
 @code {
     private SparseMemory? MemoryA { get; set; }
@@ -68,11 +123,33 @@
     private string? ErrorA { get; set; }
     private string? ErrorB { get; set; }
 
-    // Cached stats — computed once per file load
+    // Cached stats
     private long _startAddressA, _dataSizeA;
     private int _segmentCountA;
     private long _startAddressB, _dataSizeB;
     private int _segmentCountB;
+
+    // Comparison state
+    private ComparisonResult? _comparison;
+    private List<ComparisonSegment> _segments = new();
+    private List<MemorySegment> _compSegmentsMapped = new();
+    private List<long> _diffAddresses = new();
+    private int _activeSegmentIndex;
+    private int _highlightedDiffIndex = -1;
+    private ComparisonHexViewer? _compHexViewer;
+    private bool _needsMinimapRender;
+
+    private bool _isPrevDisabled => _highlightedDiffIndex == 0;
+    private bool _isNextDisabled => _highlightedDiffIndex != -1 && _highlightedDiffIndex == _diffAddresses.Count - 1;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (_needsMinimapRender && _compHexViewer != null)
+        {
+            _needsMinimapRender = false;
+            StateHasChanged();
+        }
+    }
 
     private async Task HandleFileASelected(IBrowserFile file)
     {
@@ -88,6 +165,7 @@
         _startAddressA = memory!.GetStartAddress();
         _dataSizeA = memory.GetDataSize();
         _segmentCountA = memory.GetDataSegments().Count;
+        TryCompare();
     }
 
     private async Task HandleFileBSelected(IBrowserFile file)
@@ -104,6 +182,23 @@
         _startAddressB = memory!.GetStartAddress();
         _dataSizeB = memory.GetDataSize();
         _segmentCountB = memory.GetDataSegments().Count;
+        TryCompare();
+    }
+
+    private void TryCompare()
+    {
+        if (MemoryA is not null && MemoryB is not null)
+        {
+            _comparison = MemoryComparer.Compare(MemoryA, MemoryB);
+            _segments = _comparison.GetDataSegments();
+            _diffAddresses = _comparison.GetDiffAddresses();
+            _highlightedDiffIndex = -1;
+            _activeSegmentIndex = 0;
+            _needsMinimapRender = true;
+
+            // Map ComparisonSegment to MemorySegment for SegmentPanel compatibility
+            _compSegmentsMapped = _segments.Select(s => new MemorySegment(s.Start, s.End)).ToList();
+        }
     }
 
     private static async Task<(SparseMemory? memory, string? error)> ParseFile(IBrowserFile file)
@@ -131,6 +226,8 @@
         MemoryA = null;
         FileNameA = "";
         ErrorA = null;
+        _comparison = null;
+        _compHexViewer = null;
     }
 
     private void ResetB()
@@ -138,5 +235,67 @@
         MemoryB = null;
         FileNameB = "";
         ErrorB = null;
+        _comparison = null;
+        _compHexViewer = null;
+    }
+
+    private async Task HandleSegmentClick(long address)
+    {
+        for (int i = 0; i < _segments.Count; i++)
+        {
+            if (_segments[i].Start == address)
+            {
+                _activeSegmentIndex = i;
+                break;
+            }
+        }
+
+        _highlightedDiffIndex = -1; // Clear diff highlight on segment navigation
+
+        if (_compHexViewer != null)
+        {
+            await _compHexViewer.GoToAddress(address);
+        }
+    }
+
+    private void HandleActiveSegmentChanged(int segmentIndex)
+    {
+        if (segmentIndex != _activeSegmentIndex)
+        {
+            _activeSegmentIndex = segmentIndex;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleNextDiff()
+    {
+        if (_diffAddresses.Count == 0) return;
+
+        var nextIndex = _highlightedDiffIndex + 1;
+        if (nextIndex < _diffAddresses.Count)
+        {
+            _highlightedDiffIndex = nextIndex;
+            var addr = _diffAddresses[nextIndex];
+            if (_compHexViewer != null)
+            {
+                await _compHexViewer.GoToAddress(addr);
+            }
+        }
+    }
+
+    private async Task HandlePrevDiff()
+    {
+        if (_diffAddresses.Count == 0) return;
+
+        var prevIndex = _highlightedDiffIndex == -1 ? _diffAddresses.Count - 1 : _highlightedDiffIndex - 1;
+        if (prevIndex >= 0)
+        {
+            _highlightedDiffIndex = prevIndex;
+            var addr = _diffAddresses[prevIndex];
+            if (_compHexViewer != null)
+            {
+                await _compHexViewer.GoToAddress(addr);
+            }
+        }
     }
 }

@@ -1,0 +1,119 @@
+@using HexFlex.Blazor.Services
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div class="minimap" aria-label="Interactive comparison minimap">
+    <canvas id="@_canvasId" class="minimap-canvas"></canvas>
+</div>
+
+@code {
+    private const int BytesPerRow = 16;
+
+    [Parameter] public ComparisonResult Comparison { get; set; } = default!;
+    [Parameter] public string ScrollContainerId { get; set; } = "";
+
+    private string _canvasId = $"cmp-minimap-{Guid.NewGuid():N}";
+    private bool _jsInitialized;
+    private ComparisonResult? _lastComparison;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("hexFlexComparisonMinimap.init", _canvasId, ScrollContainerId);
+            _jsInitialized = true;
+
+            if (Comparison != null && Comparison != _lastComparison)
+            {
+                _lastComparison = Comparison;
+                await SendDataToJs();
+            }
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Comparison != null && Comparison != _lastComparison && _jsInitialized)
+        {
+            _lastComparison = Comparison;
+            await SendDataToJs();
+        }
+    }
+
+    private async Task SendDataToJs()
+    {
+        var virtualRows = Comparison.GetVirtualRows();
+        if (virtualRows.Count == 0) return;
+
+        // Count data rows
+        int dataRowCount = 0;
+        foreach (var vr in virtualRows)
+        {
+            if (!vr.IsGap) dataRowCount++;
+        }
+
+        int totalBytes = dataRowCount * BytesPerRow;
+        var diffTypes = new byte[totalBytes];
+        var bytesA = new byte[totalBytes];
+        var validity = new byte[totalBytes];
+
+        int dataIdx = 0;
+        foreach (var vr in virtualRows)
+        {
+            if (vr.IsGap) continue;
+
+            int baseOffset = dataIdx * BytesPerRow;
+            for (int j = 0; j < BytesPerRow; j++)
+            {
+                long addr = vr.Address + j;
+                var entry = Comparison.GetDiffEntry(addr);
+
+                diffTypes[baseOffset + j] = (byte)entry.Type;
+                bytesA[baseOffset + j] = entry.ByteA ?? 0;
+                validity[baseOffset + j] = (byte)((entry.ByteA is not null || entry.ByteB is not null) ? 1 : 0);
+            }
+            dataIdx++;
+        }
+
+        // Reuse the same virtual rows JSON serialization
+        var vrJson = SerializeVirtualRows(virtualRows);
+
+        await JS.InvokeVoidAsync("hexFlexComparisonMinimap.setData",
+            _canvasId, vrJson, diffTypes, bytesA, validity);
+    }
+
+    private static string SerializeVirtualRows(List<ComparisonVirtualRow> rows)
+    {
+        var sb = new System.Text.StringBuilder(256);
+        sb.Append('[');
+        for (int i = 0; i < rows.Count; i++)
+        {
+            if (i > 0) sb.Append(',');
+            var vr = rows[i];
+            sb.Append("{\"isGap\":").Append(vr.IsGap ? "true" : "false");
+            sb.Append(",\"segmentIndex\":").Append(vr.SegmentIndex);
+            if (vr.IsGap)
+            {
+                sb.Append(",\"gapStartAddr\":").Append(vr.GapStartAddr);
+                sb.Append(",\"gapEndAddr\":").Append(vr.GapEndAddr);
+                sb.Append(",\"skippedBytes\":").Append(vr.SkippedBytes);
+            }
+            else
+            {
+                sb.Append(",\"address\":").Append(vr.Address);
+            }
+            sb.Append('}');
+        }
+        sb.Append(']');
+        return sb.ToString();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("hexFlexComparisonMinimap.dispose", _canvasId);
+        }
+        catch (JSDisconnectedException) { }
+    }
+}

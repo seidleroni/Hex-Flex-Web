@@ -1,0 +1,20 @@
+@using HexFlex.Blazor.Services
+
+<div class="diff-statistics-grid">
+    <div class="diff-stat-card">
+        <p class="diff-stat-label">Bytes Modified</p>
+        <p class="diff-stat-value" style="color: #facc15;">@Stats.Modified</p>
+    </div>
+    <div class="diff-stat-card">
+        <p class="diff-stat-label">Bytes Added</p>
+        <p class="diff-stat-value" style="color: #4ade80;">@Stats.Added</p>
+    </div>
+    <div class="diff-stat-card">
+        <p class="diff-stat-label">Bytes Removed</p>
+        <p class="diff-stat-value" style="color: #f87171;">@Stats.Removed</p>
+    </div>
+</div>
+
+@code {
+    [Parameter] public DiffStats Stats { get; set; } = new(0, 0, 0);
+}

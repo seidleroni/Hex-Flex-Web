@@ -913,6 +913,161 @@ html, body {
     margin-bottom: 0.5rem;
 }
 
+/* ===== Comparison View ===== */
+.comparison-view {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.comparison-content {
+    display: flex;
+    flex-direction: row;
+    gap: 0.25rem;
+    flex-grow: 1;
+    margin-top: 0.5rem;
+}
+
+/* ===== Diff Statistics ===== */
+.diff-statistics-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+    margin: 0.5rem 0;
+    flex-shrink: 0;
+}
+
+@media (min-width: 768px) {
+    .diff-statistics-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+.diff-stat-card {
+    background: #1f2937; /* gray-800 */
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    border: 1px solid #374151; /* gray-700 */
+    text-align: center;
+}
+
+.diff-stat-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #9ca3af; /* gray-400 */
+}
+
+.diff-stat-value {
+    font-size: 1.25rem;
+    font-family: 'Consolas', 'Monaco', monospace;
+    margin-top: 0.25rem;
+}
+
+/* ===== Diff Legend ===== */
+.diff-legend {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    row-gap: 0.5rem;
+    margin: 0.5rem 0;
+    font-size: 0.875rem;
+    color: #9ca3af; /* gray-400 */
+    flex-shrink: 0;
+}
+
+.diff-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.diff-legend-swatch {
+    width: 1rem;
+    height: 1rem;
+    border-radius: 0.25rem;
+    display: inline-block;
+}
+
+/* ===== Diff Navigator ===== */
+.diff-navigator {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1f2937; /* gray-800 */
+    margin-left: 0.25rem;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+}
+
+.diff-navigator-buttons {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.diff-nav-btn {
+    padding: 0.5rem;
+    color: #9ca3af; /* gray-400 */
+    background: transparent;
+    border: none;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: color 0.2s, background-color 0.2s;
+}
+
+.diff-nav-btn:hover:not(:disabled) {
+    color: #22d3ee; /* cyan-400 */
+    background: rgba(55, 65, 81, 0.5);
+}
+
+.diff-nav-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.diff-nav-btn:focus-visible {
+    outline: 2px solid #06b6d4;
+    outline-offset: 2px;
+}
+
+.diff-nav-icon {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+.diff-navigator-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #6b7280; /* gray-500 */
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+}
+
+/* ===== Diff Text Colors (used in comparison hex viewer) ===== */
+.diff-text-modified {
+    color: #fde047 !important; /* yellow-300 */
+    font-weight: 700;
+}
+
+.diff-text-added {
+    color: #86efac !important; /* green-300 */
+    font-weight: 700;
+}
+
+.diff-text-removed {
+    color: #4b5563 !important; /* gray-600 */
+    text-decoration: line-through;
+}
+
 /* ===== Blazor Loading ===== */
 .loading-progress {
     position: relative;

@@ -1,0 +1,24 @@
+<div class="diff-navigator">
+    <div class="diff-navigator-buttons">
+        <button class="diff-nav-btn" @onclick="OnPrev" disabled="@IsPrevDisabled"
+                aria-label="Go to previous difference" title="Go to previous difference">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="diff-nav-icon diff-nav-icon-up">
+                <path fill-rule="evenodd" d="M10 17a.75.75 0 01-.75-.75V5.612L5.29 9.77a.75.75 0 01-1.08-1.04l5.25-5.5a.75.75 0 011.08 0l5.25 5.5a.75.75 0 11-1.08 1.04l-3.96-4.158V16.25A.75.75 0 0110 17z" clip-rule="evenodd" />
+            </svg>
+        </button>
+        <button class="diff-nav-btn" @onclick="OnNext" disabled="@IsNextDisabled"
+                aria-label="Go to next difference" title="Go to next difference">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="diff-nav-icon diff-nav-icon-down">
+                <path fill-rule="evenodd" d="M10 3a.75.75 0 01.75.75v10.638l3.96-4.158a.75.75 0 111.08 1.04l-5.25 5.5a.75.75 0 01-1.08 0l-5.25-5.5a.75.75 0 111.08-1.04l3.96 4.158V3.75A.75.75 0 0110 3z" clip-rule="evenodd" />
+            </svg>
+        </button>
+    </div>
+    <div class="diff-navigator-label">Diffs</div>
+</div>
+
+@code {
+    [Parameter] public EventCallback OnPrev { get; set; }
+    [Parameter] public EventCallback OnNext { get; set; }
+    [Parameter] public bool IsPrevDisabled { get; set; }
+    [Parameter] public bool IsNextDisabled { get; set; }
+}
