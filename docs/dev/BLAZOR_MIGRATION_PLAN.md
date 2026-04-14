@@ -13,7 +13,7 @@
 | 6 | Compare View | Not Started |
 | 7 | Polish & Parity | Not Started |
 
-**Current phase:** Phase 5 complete. Awaiting checkin approval.
+**Current phase:** Phase 5 approved. Proceeding to Phase 6.
 
 ---
 
