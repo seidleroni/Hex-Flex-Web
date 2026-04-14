@@ -10,10 +10,10 @@
 | 3 | Single File View — Statistics & Segments | Complete ✓ |
 | 4 | Single File View — Hex/ASCII Table | Complete ✓ |
 | 5 | Minimap (Single File) | Complete ✓ |
-| 6 | Compare View | Not Started |
+| 6 | Compare View | Complete |
 | 7 | Polish & Parity | Not Started |
 
-**Current phase:** Phase 5 approved. Proceeding to Phase 6.
+**Current phase:** Phase 6 complete. Awaiting checkin approval.
 
 ---
 
