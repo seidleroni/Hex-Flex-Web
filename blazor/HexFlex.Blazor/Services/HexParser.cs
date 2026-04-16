@@ -2,24 +2,25 @@ namespace HexFlex.Blazor.Services;
 
 public static class HexParser
 {
-    // Lookup table: char → nibble value. -1 = invalid.
-    private static readonly int[] HexLut = BuildHexLut();
+    // Lookup table: byte → nibble value. -1 = invalid.
+    // Indexed by the raw ASCII byte (0..255), so no bounds check needed at callsites.
+    private static readonly sbyte[] HexLut = BuildHexLut();
 
-    private static int[] BuildHexLut()
+    private static sbyte[] BuildHexLut()
     {
-        var lut = new int[128];
-        for (int i = 0; i < 128; i++) lut[i] = -1;
-        for (int i = 0; i <= 9; i++) { lut['0' + i] = i; }
-        for (int i = 0; i < 6; i++) { lut['A' + i] = 10 + i; lut['a' + i] = 10 + i; }
+        var lut = new sbyte[256];
+        for (int i = 0; i < 256; i++) lut[i] = -1;
+        for (int i = 0; i <= 9; i++) { lut['0' + i] = (sbyte)i; }
+        for (int i = 0; i < 6; i++) { lut['A' + i] = (sbyte)(10 + i); lut['a' + i] = (sbyte)(10 + i); }
         return lut;
     }
 
     /// <summary>
-    /// Parses the content of an Intel HEX file into a SparseMemory object.
-    /// Supports record types: 0x00 (Data), 0x01 (EOF), 0x02 (Extended Segment Address),
-    /// 0x04 (Extended Linear Address), 0x05 (Start Linear Address).
+    /// Parses the content of an Intel HEX file (as ASCII bytes) into a SparseMemory
+    /// object. Supports record types: 0x00 (Data), 0x01 (EOF), 0x02 (Extended Segment
+    /// Address), 0x04 (Extended Linear Address), 0x05 (Start Linear Address).
     /// </summary>
-    public static SparseMemory Parse(string hexContent)
+    public static SparseMemory Parse(ReadOnlySpan<byte> hexContent)
     {
         var memory = new SparseMemory();
         long baseAddress = 0;
@@ -31,7 +32,7 @@ public static class HexParser
         while (pos < contentLen)
         {
             // Skip to next ':' (start of record)
-            while (pos < contentLen && hexContent[pos] != ':')
+            while (pos < contentLen && hexContent[pos] != (byte)':')
                 pos++;
 
             if (pos >= contentLen) break;
@@ -39,7 +40,7 @@ public static class HexParser
             // Find end of this line
             int lineStart = pos;
             int lineEnd = pos;
-            while (lineEnd < contentLen && hexContent[lineEnd] != '\n' && hexContent[lineEnd] != '\r')
+            while (lineEnd < contentLen && hexContent[lineEnd] != (byte)'\n' && hexContent[lineEnd] != (byte)'\r')
                 lineEnd++;
 
             int lineLen = lineEnd - lineStart;
@@ -138,16 +139,25 @@ public static class HexParser
     }
 
     /// <summary>
-    /// Parse two hex characters at the given offset into a byte value.
-    /// Uses pre-built lookup table for speed in WASM.
+    /// Convenience overload for callers that already have the content as a string
+    /// (tests, legacy callers). Allocates a byte buffer via ASCII encoding — for
+    /// the hot path, prefer the <see cref="ReadOnlySpan{Byte}"/> overload so the
+    /// UTF-8/string allocation can be skipped entirely.
     /// </summary>
-    private static int ParseByte(string s, int offset, int[] lut)
+    public static SparseMemory Parse(string hexContent)
     {
-        int hi = s[offset];
-        int lo = s[offset + 1];
-        if (hi >= 128 || lo >= 128) throw new FormatException($"Invalid hex character at offset {offset}");
-        int hv = lut[hi];
-        int lv = lut[lo];
+        var bytes = System.Text.Encoding.ASCII.GetBytes(hexContent);
+        return Parse(bytes.AsSpan());
+    }
+
+    /// <summary>
+    /// Parse two hex characters at the given offset into a byte value.
+    /// Uses pre-built 256-entry byte LUT — indexing by byte is bounds-free.
+    /// </summary>
+    private static int ParseByte(ReadOnlySpan<byte> s, int offset, sbyte[] lut)
+    {
+        int hv = lut[s[offset]];
+        int lv = lut[s[offset + 1]];
         if (hv < 0 || lv < 0) throw new FormatException($"Invalid hex character at offset {offset}");
         return (hv << 4) | lv;
     }

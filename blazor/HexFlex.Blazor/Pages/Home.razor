@@ -50,21 +50,29 @@ else
 
         try
         {
-            // Read file bytes BEFORE changing state — re-rendering can invalidate the stream
+            // Read file bytes BEFORE changing state — re-rendering can invalidate the stream.
+            // Preallocate to file.Size so CopyToAsync doesn't grow through reallocations,
+            // and parse straight from the ASCII byte[] (skips UTF-8 decode + string alloc).
             var sw = System.Diagnostics.Stopwatch.StartNew();
             using var stream = file.OpenReadStream(maxAllowedSize: Constants.MaxFileSize);
-            using var ms = new System.IO.MemoryStream();
-            await stream.CopyToAsync(ms);
-            var content = System.Text.Encoding.UTF8.GetString(ms.ToArray());
+            var buffer = new byte[file.Size];
+            int read = 0;
+            while (read < buffer.Length)
+            {
+                int n = await stream.ReadAsync(buffer.AsMemory(read));
+                if (n == 0) break;
+                read += n;
+            }
             var fileName = file.Name;
-            Console.WriteLine($"[PERF] File read + decode: {sw.ElapsedMilliseconds}ms ({content.Length} chars, {ms.Length} bytes)");
+            Console.WriteLine($"[PERF] File read: {sw.ElapsedMilliseconds}ms ({read} bytes)");
 
             IsLoading = true;
             StateHasChanged();
             await Task.Yield();
 
             sw.Restart();
-            if (!FileValidator.IsIntelHexContent(content))
+            var contentSpan = buffer.AsSpan(0, read);
+            if (!FileValidator.IsIntelHexContent(contentSpan))
             {
                 Error = "The file does not appear to be a valid Intel HEX file.";
                 IsLoading = false;
@@ -73,7 +81,7 @@ else
             Console.WriteLine($"[PERF] Validation: {sw.ElapsedMilliseconds}ms");
 
             sw.Restart();
-            Memory = HexParser.Parse(content);
+            Memory = HexParser.Parse(contentSpan);
             Console.WriteLine($"[PERF] HexParser.Parse: {sw.ElapsedMilliseconds}ms");
             FileName = fileName;
 
