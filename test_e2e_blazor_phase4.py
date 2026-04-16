@@ -12,7 +12,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 
 # Config
-BLAZOR_URL = os.environ.get("BLAZOR_URL", "http://localhost:5163")
+BLAZOR_URL = os.environ.get("BLAZOR_URL", "http://localhost:5192")
 TEST_FILES_DIR = Path(__file__).parent / "test_files"
 FIXTURES_DIR = Path(__file__).parent / "test_output" / "fixtures"
 SCREENSHOT_DIR = Path(__file__).parent / "test_output" / "blazor_phase4_screenshots"
