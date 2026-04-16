@@ -1,13 +1,43 @@
 namespace HexFlex.Blazor.Services;
 
+/// <summary>
+/// A 64 KB fixed-size block. Stores raw data in <see cref="Data"/> and a
+/// 1-bit-per-byte validity bitmap in <see cref="Validity"/> (1024 64-bit words
+/// per default 64 KB block). Replaces the previous <c>byte?[]</c> layout, which
+/// cost 2 bytes per cell and required nullable checks in every hot loop.
+/// </summary>
+public sealed class MemoryBlock
+{
+    public readonly byte[] Data;
+    public readonly ulong[] Validity;
+
+    public MemoryBlock(int size)
+    {
+        Data = new byte[size];
+        Validity = new ulong[(size + 63) >> 6];
+    }
+
+    public bool IsValid(int offset) => (Validity[offset >> 6] & (1UL << (offset & 63))) != 0UL;
+
+    public void SetValid(int offset)
+    {
+        Validity[offset >> 6] |= 1UL << (offset & 63);
+    }
+}
+
 public class SparseMemory
 {
     public const int DefaultBlockSize = 64 * 1024; // 64KB
-    public const int SegmentGapThreshold = 1024;    // 1KB
+    public const int SegmentGapThreshold = 1024;   // 1KB
 
-    private readonly Dictionary<long, byte?[]> _memoryBlocks = new();
+    private readonly Dictionary<long, MemoryBlock> _memoryBlocks = new();
     private readonly int _blockSize;
     private long[]? _sortedKeys;
+
+    // "Last block" cache — HEX files write sequentially, so nearly every write
+    // is in the same block as the previous one. Avoid the dictionary lookup.
+    private long _lastBlockKey = long.MinValue;
+    private MemoryBlock? _lastBlock;
 
     // Incremental tracking
     private long _dataSize;
@@ -35,39 +65,136 @@ public class SparseMemory
         return _sortedKeys;
     }
 
-    public void SetByte(long address, byte value)
+    private MemoryBlock GetOrCreateBlock(long blockKey)
     {
-        var blockKey = GetBlockKey(address);
+        if (_lastBlock is not null && _lastBlockKey == blockKey) return _lastBlock;
+
         if (!_memoryBlocks.TryGetValue(blockKey, out var block))
         {
-            block = new byte?[_blockSize];
+            block = new MemoryBlock(_blockSize);
             _memoryBlocks[blockKey] = block;
             InvalidateSortedKeys();
         }
+
+        _lastBlockKey = blockKey;
+        _lastBlock = block;
+        return block;
+    }
+
+    public void SetByte(long address, byte value)
+    {
+        var block = GetOrCreateBlock(GetBlockKey(address));
         var offset = GetOffset(address);
-        if (block[offset] is null)
+
+        ulong mask = 1UL << (offset & 63);
+        ref ulong word = ref block.Validity[offset >> 6];
+        if ((word & mask) == 0UL)
+        {
             _dataSize++;
-        block[offset] = value;
+            word |= mask;
+        }
+        block.Data[offset] = value;
 
         if (address < _minAddress) _minAddress = address;
         if (address > _maxAddress) _maxAddress = address;
 
-        _cachedSegments = null; // invalidate segment cache
+        _cachedSegments = null;
+    }
+
+    /// <summary>
+    /// Bulk-write a contiguous run of bytes. Much faster than SetByte per byte:
+    /// resolves the block once, handles the (rare) block-boundary crossing by
+    /// splitting, and uses Span.CopyTo for the data payload. Validity bits are
+    /// set per-byte via OR; for long runs this is still cheaper than the
+    /// nullable-wrapped scalar writes it replaces.
+    /// </summary>
+    public void WriteRange(long startAddress, ReadOnlySpan<byte> data)
+    {
+        if (data.IsEmpty) return;
+
+        int remaining = data.Length;
+        int srcOffset = 0;
+        long addr = startAddress;
+
+        while (remaining > 0)
+        {
+            long blockKey = GetBlockKey(addr);
+            int offset = GetOffset(addr);
+            int blockRemaining = _blockSize - offset;
+            int toWrite = remaining < blockRemaining ? remaining : blockRemaining;
+
+            var block = GetOrCreateBlock(blockKey);
+            data.Slice(srcOffset, toWrite).CopyTo(block.Data.AsSpan(offset));
+
+            // Validity bits: count newly-set bits for _dataSize, then OR them in.
+            var validity = block.Validity;
+            int bitStart = offset;
+            int bitEnd = offset + toWrite;
+            long newlySet = 0;
+
+            // Handle head partial word
+            int wi = bitStart >> 6;
+            int bitInWord = bitStart & 63;
+            if (bitInWord != 0)
+            {
+                int bitsInThisWord = Math.Min(64 - bitInWord, toWrite);
+                ulong mask = bitsInThisWord >= 64
+                    ? ulong.MaxValue
+                    : (((1UL << bitsInThisWord) - 1UL) << bitInWord);
+                ulong oldBits = validity[wi] & mask;
+                validity[wi] |= mask;
+                newlySet += System.Numerics.BitOperations.PopCount(mask ^ oldBits);
+                wi++;
+                bitStart += bitsInThisWord;
+            }
+
+            // Handle full words
+            while (bitStart + 64 <= bitEnd)
+            {
+                ulong old = validity[wi];
+                validity[wi] = ulong.MaxValue;
+                newlySet += 64 - System.Numerics.BitOperations.PopCount(old);
+                wi++;
+                bitStart += 64;
+            }
+
+            // Handle trailing partial word
+            if (bitStart < bitEnd)
+            {
+                int tailBits = bitEnd - bitStart;
+                ulong mask = (1UL << tailBits) - 1UL;
+                ulong oldBits = validity[wi] & mask;
+                validity[wi] |= mask;
+                newlySet += System.Numerics.BitOperations.PopCount(mask ^ oldBits);
+            }
+
+            _dataSize += newlySet;
+
+            remaining -= toWrite;
+            srcOffset += toWrite;
+            addr += toWrite;
+        }
+
+        if (startAddress < _minAddress) _minAddress = startAddress;
+        long endAddr = startAddress + data.Length - 1;
+        if (endAddr > _maxAddress) _maxAddress = endAddr;
+
+        _cachedSegments = null;
     }
 
     public byte? GetByte(long address)
     {
         var blockKey = GetBlockKey(address);
-        if (_memoryBlocks.TryGetValue(blockKey, out var block))
-        {
-            return block[GetOffset(address)];
-        }
-        return null;
+        if (!_memoryBlocks.TryGetValue(blockKey, out var block)) return null;
+        int offset = GetOffset(address);
+        if (!block.IsValid(offset)) return null;
+        return block.Data[offset];
     }
 
     /// <summary>
     /// Bulk-read bytes from a contiguous address range into pre-allocated arrays.
-    /// Much faster than calling GetByte() per byte — avoids repeated dictionary lookups.
+    /// Fills <paramref name="data"/> with the byte values and <paramref name="validity"/>
+    /// with 1 for each address that is present (0 for absent).
     /// </summary>
     public void ReadRange(long startAddress, int count, byte[] data, byte[] validity)
     {
@@ -80,26 +207,26 @@ public class SparseMemory
 
             if (!_memoryBlocks.TryGetValue(blockKey, out var block))
             {
-                // No block — skip ahead to next block boundary
                 int remaining = _blockSize - offset;
                 int skip = Math.Min(remaining, count - i);
-                // data[]/validity[] already zeroed by default
                 i += skip;
                 continue;
             }
 
-            // Copy from this block until end of block or end of requested range
             int blockRemaining = _blockSize - offset;
             int toCopy = Math.Min(blockRemaining, count - i);
 
+            // Copy bytes wholesale; then set validity bytes per bit.
+            block.Data.AsSpan(offset, toCopy).CopyTo(data.AsSpan(i, toCopy));
+
+            var vbits = block.Validity;
             for (int j = 0; j < toCopy; j++)
             {
-                var b = block[offset + j];
-                if (b.HasValue)
-                {
-                    data[i + j] = b.Value;
+                int pos = offset + j;
+                if ((vbits[pos >> 6] & (1UL << (pos & 63))) != 0UL)
                     validity[i + j] = 1;
-                }
+                else
+                    data[i + j] = 0; // overwrite back to zero for invalid positions
             }
             i += toCopy;
         }
@@ -128,19 +255,21 @@ public class SparseMemory
     {
         _memoryBlocks.Clear();
         InvalidateSortedKeys();
+        _lastBlockKey = long.MinValue;
+        _lastBlock = null;
         _dataSize = 0;
         _minAddress = long.MaxValue;
         _maxAddress = long.MinValue;
         _cachedSegments = null;
     }
 
-    public IReadOnlyDictionary<long, byte?[]> MemoryBlocks => _memoryBlocks;
+    public IReadOnlyDictionary<long, MemoryBlock> MemoryBlocks => _memoryBlocks;
 
     /// <summary>
     /// Identifies contiguous regions of memory containing "meaningful" data
-    /// (any byte that is not null and not 0xFF). Regions separated by gaps
-    /// larger than SegmentGapThreshold are reported as separate segments.
-    /// Results are cached until the next SetByte/Clear call.
+    /// (bytes that are valid and not 0xFF). Regions separated by gaps larger
+    /// than SegmentGapThreshold are reported as separate segments. Results
+    /// are cached until the next SetByte/WriteRange/Clear call.
     /// </summary>
     public List<MemorySegment> GetDataSegments()
     {
@@ -158,36 +287,58 @@ public class SparseMemory
         foreach (var key in sortedKeys)
         {
             var block = _memoryBlocks[key];
+            var data = block.Data;
+            var validity = block.Validity;
             long subStart = -1;
             long subEnd = -1;
 
-            for (int offset = 0; offset < _blockSize; offset++)
+            // Iterate by 64-bit validity words — for empty words (all zero) we
+            // can skip 64 offsets at a stride. This is a big win for sparse
+            // blocks that contain a few bytes surrounded by empty space.
+            int wordCount = validity.Length;
+            for (int w = 0; w < wordCount; w++)
             {
-                var b = block[offset];
-                bool isMeaningful = b is not null && b != 0xFF;
+                ulong word = validity[w];
+                int baseOffset = w << 6;
 
-                if (isMeaningful)
-                {
-                    long addr = key + offset;
-                    if (subStart == -1)
-                    {
-                        subStart = addr;
-                        subEnd = addr;
-                    }
-                    else
-                    {
-                        subEnd = addr;
-                    }
-                }
-                else
+                if (word == 0UL)
                 {
                     if (subStart != -1)
                     {
                         allSubSegments.Add((subStart, subEnd));
                         subStart = -1;
                     }
+                    continue;
+                }
+
+                int wordLimit = Math.Min(64, _blockSize - baseOffset);
+                for (int bit = 0; bit < wordLimit; bit++)
+                {
+                    bool valid = (word & (1UL << bit)) != 0UL;
+                    if (!valid || data[baseOffset + bit] == 0xFF)
+                    {
+                        if (subStart != -1)
+                        {
+                            allSubSegments.Add((subStart, subEnd));
+                            subStart = -1;
+                        }
+                    }
+                    else
+                    {
+                        long addr = key + baseOffset + bit;
+                        if (subStart == -1)
+                        {
+                            subStart = addr;
+                            subEnd = addr;
+                        }
+                        else
+                        {
+                            subEnd = addr;
+                        }
+                    }
                 }
             }
+
             if (subStart != -1)
             {
                 allSubSegments.Add((subStart, subEnd));

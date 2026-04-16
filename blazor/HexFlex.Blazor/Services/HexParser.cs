@@ -26,6 +26,11 @@ public static class HexParser
         long baseAddress = 0;
         var lut = HexLut;
 
+        // HEX data records are at most 255 bytes of payload. Stack-allocating
+        // once avoids any per-record heap traffic, and batching into WriteRange
+        // collapses 255 dictionary lookups into one.
+        Span<byte> recordBuf = stackalloc byte[255];
+
         int pos = 0;
         int contentLen = hexContent.Length;
 
@@ -65,15 +70,16 @@ public static class HexParser
 
             switch (recordType)
             {
-                case 0x00: // Data Record — write directly to memory
+                case 0x00: // Data Record — parse into scratch buffer, bulk-write
                 {
                     long fullAddress = baseAddress + address;
                     for (int i = 0; i < byteCount; i++)
                     {
                         int b = ParseByte(hexContent, dataStart + i * 2, lut);
                         checksumCalc += b;
-                        memory.SetByte(fullAddress + i, (byte)b);
+                        recordBuf[i] = (byte)b;
                     }
+                    memory.WriteRange(fullAddress, recordBuf.Slice(0, byteCount));
                     break;
                 }
 

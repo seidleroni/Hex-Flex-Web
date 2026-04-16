@@ -60,38 +60,66 @@ public class ComparisonResult
         sortedBlockKeys.Sort();
 
         // --- Pass 1: collect row addresses and diff addresses ---
-        var rowAddressSet = new HashSet<long>();
+        // Block iteration is sorted and offsets ascend, so row addresses naturally
+        // appear in ascending order. Track the last-seen row to drop the HashSet.
         var rowAddressList = new List<long>();
         var diffAddrs = new List<long>();
         long modified = 0, added = 0, removed = 0;
+        long lastRowAddr = long.MinValue;
+
+        int wordsPerBlock = (blockSize + 63) >> 6;
 
         foreach (var blockKey in sortedBlockKeys)
         {
             blocksA.TryGetValue(blockKey, out var blockA);
             blocksB.TryGetValue(blockKey, out var blockB);
+            var dataA = blockA?.Data;
+            var dataB = blockB?.Data;
+            var vA = blockA?.Validity;
+            var vB = blockB?.Validity;
 
-            for (int offset = 0; offset < blockSize; offset++)
+            for (int w = 0; w < wordsPerBlock; w++)
             {
-                var byteA = blockA?[offset];
-                var byteB = blockB?[offset];
+                ulong wa = vA is null ? 0UL : vA[w];
+                ulong wb = vB is null ? 0UL : vB[w];
+                ulong any = wa | wb;
+                if (any == 0UL) continue;
 
-                if (byteA is null && byteB is null)
-                    continue;
-
-                long addr = blockKey + offset;
-
-                // Track row address
-                long rowAddr = (addr / BytesPerRow) * BytesPerRow;
-                if (rowAddressSet.Add(rowAddr))
-                    rowAddressList.Add(rowAddr);
-
-                // Track diff addresses and stats
-                if (byteA != byteB)
+                int baseOffset = w << 6;
+                while (any != 0UL)
                 {
-                    if (byteA is null) added++;
-                    else if (byteB is null) removed++;
-                    else modified++;
-                    diffAddrs.Add(addr);
+                    int bit = System.Numerics.BitOperations.TrailingZeroCount(any);
+                    any &= any - 1;
+                    int offset = baseOffset + bit;
+                    if (offset >= blockSize) break;
+
+                    ulong mask = 1UL << bit;
+                    bool hasA = (wa & mask) != 0UL;
+                    bool hasB = (wb & mask) != 0UL;
+
+                    long addr = blockKey + offset;
+                    long rowAddr = addr & ~(long)(BytesPerRow - 1);
+                    if (rowAddr != lastRowAddr)
+                    {
+                        rowAddressList.Add(rowAddr);
+                        lastRowAddr = rowAddr;
+                    }
+
+                    byte a = hasA ? dataA![offset] : (byte)0;
+                    byte b = hasB ? dataB![offset] : (byte)0;
+
+                    if (hasA && hasB)
+                    {
+                        if (a != b) { modified++; diffAddrs.Add(addr); }
+                    }
+                    else if (hasB)
+                    {
+                        added++; diffAddrs.Add(addr);
+                    }
+                    else // hasA
+                    {
+                        removed++; diffAddrs.Add(addr);
+                    }
                 }
             }
         }
@@ -103,57 +131,78 @@ public class ComparisonResult
         _virtualRows = BuildVirtualRows(rowAddressList);
         _segments = BuildSegments(_virtualRows);
 
-        // --- Build rowAddress → dataRowIndex map for pass 2 ---
-        var rowIndexMap = new Dictionary<long, int>(rowAddressList.Count);
-        int dataRowIdx = 0;
-        foreach (var vr in _virtualRows)
-        {
-            if (!vr.IsGap)
-            {
-                rowIndexMap[vr.Address] = dataRowIdx;
-                dataRowIdx++;
-            }
-        }
+        // Row-address → data-row index: since rowAddressList is sorted and
+        // each entry maps to the next data-row index, we can assign indices
+        // by position and look them up via binary search in pass 2.
+        int dataRowCount = rowAddressList.Count;
 
-        // --- Pass 2: fill flat arrays directly (no diffMap dictionary) ---
-        int totalBytes = dataRowIdx * BytesPerRow;
+        // --- Pass 2: fill flat arrays directly ---
+        int totalBytes = dataRowCount * BytesPerRow;
         _diffTypes = new byte[totalBytes];
         _bytesA = new byte[totalBytes];
         _bytesB = new byte[totalBytes];
         _validity = new byte[totalBytes];
 
+        // Monotonic cursor into rowAddressList — each block's rows appear in
+        // order, so we never need to rewind.
+        int rowCursor = 0;
+        long cursorRowAddr = dataRowCount > 0 ? rowAddressList[0] : long.MinValue;
+
         foreach (var blockKey in sortedBlockKeys)
         {
             blocksA.TryGetValue(blockKey, out var blockA);
             blocksB.TryGetValue(blockKey, out var blockB);
+            var dataA = blockA?.Data;
+            var dataB = blockB?.Data;
+            var vA = blockA?.Validity;
+            var vB = blockB?.Validity;
 
-            for (int offset = 0; offset < blockSize; offset++)
+            for (int w = 0; w < wordsPerBlock; w++)
             {
-                var byteA = blockA?[offset];
-                var byteB = blockB?[offset];
+                ulong wa = vA is null ? 0UL : vA[w];
+                ulong wb = vB is null ? 0UL : vB[w];
+                ulong any = wa | wb;
+                if (any == 0UL) continue;
 
-                if (byteA is null && byteB is null)
-                    continue;
+                int baseOffset = w << 6;
+                while (any != 0UL)
+                {
+                    int bit = System.Numerics.BitOperations.TrailingZeroCount(any);
+                    any &= any - 1;
+                    int offset = baseOffset + bit;
+                    if (offset >= blockSize) break;
 
-                long addr = blockKey + offset;
-                long rowAddr = (addr / BytesPerRow) * BytesPerRow;
-                int colOffset = (int)(addr - rowAddr);
+                    ulong mask = 1UL << bit;
+                    bool hasA = (wa & mask) != 0UL;
+                    bool hasB = (wb & mask) != 0UL;
 
-                if (!rowIndexMap.TryGetValue(rowAddr, out int rowIdx))
-                    continue;
+                    long addr = blockKey + offset;
+                    long rowAddr = addr & ~(long)(BytesPerRow - 1);
 
-                int flatIdx = rowIdx * BytesPerRow + colOffset;
+                    // Advance cursor if we've moved to a new row.
+                    while (cursorRowAddr < rowAddr && rowCursor + 1 < dataRowCount)
+                    {
+                        rowCursor++;
+                        cursorRowAddr = rowAddressList[rowCursor];
+                    }
+                    if (cursorRowAddr != rowAddr) continue; // shouldn't happen
 
-                DiffType type;
-                if (byteA == byteB) type = DiffType.Unchanged;
-                else if (byteA is null) type = DiffType.Added;
-                else if (byteB is null) type = DiffType.Removed;
-                else type = DiffType.Modified;
+                    int colOffset = (int)(addr - rowAddr);
+                    int flatIdx = rowCursor * BytesPerRow + colOffset;
 
-                _diffTypes[flatIdx] = (byte)type;
-                _bytesA[flatIdx] = byteA ?? 0;
-                _bytesB[flatIdx] = byteB ?? (byteA ?? 0);
-                _validity[flatIdx] = 1;
+                    byte a = hasA ? dataA![offset] : (byte)0;
+                    byte b = hasB ? dataB![offset] : (byte)0;
+
+                    DiffType type;
+                    if (hasA && hasB) type = a == b ? DiffType.Unchanged : DiffType.Modified;
+                    else if (hasA) type = DiffType.Removed;
+                    else type = DiffType.Added;
+
+                    _diffTypes[flatIdx] = (byte)type;
+                    _bytesA[flatIdx] = hasA ? a : b;
+                    _bytesB[flatIdx] = hasB ? b : a;
+                    _validity[flatIdx] = 1;
+                }
             }
         }
     }
