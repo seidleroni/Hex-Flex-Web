@@ -12,16 +12,6 @@ public record DiffEntry(DiffType Type, byte? ByteA, byte? ByteB);
 
 public record DiffStats(long Modified, long Added, long Removed);
 
-public class ComparisonVirtualRow
-{
-    public bool IsGap { get; init; }
-    public long Address { get; init; }       // Row start address (data rows)
-    public int SegmentIndex { get; init; }
-    public long SkippedBytes { get; init; }  // Gap rows only
-    public long GapStartAddr { get; init; }  // Gap rows only
-    public long GapEndAddr { get; init; }    // Gap rows only
-}
-
 public class ComparisonSegment
 {
     public long Start { get; init; }
@@ -35,9 +25,15 @@ public class ComparisonResult
     private const int SegmentGapThreshold = 1024; // 1KB
 
     // Pre-built during construction
-    private readonly List<ComparisonVirtualRow> _virtualRows;
+    private readonly List<long> _rowAddresses;
     private readonly List<long> _diffAddresses;
     private readonly List<ComparisonSegment> _segments;
+
+    // Packed virtual rows — built directly during construction, no intermediate
+    // ComparisonVirtualRow list. JS interop gets these as Uint8Arrays.
+    private readonly byte[] _vrAddressBytes;   // 4 bytes per row (uint32 LE)
+    private readonly byte[] _vrFlags;          // bit 0 = isGap, bits 1-7 = segmentIndex
+    private readonly byte[] _gapDataBytes;     // 12 bytes per gap (3 x uint32 LE)
 
     // Flat arrays built during construction (no dictionary needed)
     private readonly byte[] _diffTypes;
@@ -187,8 +183,13 @@ public class ComparisonResult
         _bytesB = outB;
         _validity = outV;
 
-        _virtualRows = BuildVirtualRows(rowAddressList);
-        _segments = BuildSegments(_virtualRows);
+        _rowAddresses = rowAddressList;
+        BuildPackedVirtualRowsAndSegments(
+            rowAddressList,
+            out _vrAddressBytes,
+            out _vrFlags,
+            out _gapDataBytes,
+            out _segments);
     }
 
     private static void EnsureCapacity(
@@ -204,85 +205,131 @@ public class ComparisonResult
         capRows = newCap;
     }
 
-    private static List<ComparisonVirtualRow> BuildVirtualRows(List<long> sortedRowAddresses)
+    /// <summary>
+    /// Single-pass construction of packed virtual rows + segment list.
+    /// Replaces the previous two-step BuildVirtualRows→BuildSegments by writing
+    /// the JS-interop byte arrays directly (no intermediate ComparisonVirtualRow
+    /// objects allocated per row — saves ~50k allocations on large diffs).
+    /// </summary>
+    private static void BuildPackedVirtualRowsAndSegments(
+        List<long> sortedRowAddresses,
+        out byte[] addressBytes,
+        out byte[] flags,
+        out byte[] gapDataBytes,
+        out List<ComparisonSegment> segments)
     {
-        var virtualRows = new List<ComparisonVirtualRow>();
-        if (sortedRowAddresses.Count == 0)
-            return virtualRows;
+        segments = new List<ComparisonSegment>();
+        int dataRowCount = sortedRowAddresses.Count;
+        if (dataRowCount == 0)
+        {
+            addressBytes = Array.Empty<byte>();
+            flags = Array.Empty<byte>();
+            gapDataBytes = Array.Empty<byte>();
+            return;
+        }
 
-        int segmentIndex = 0;
-        long lastRowAddress = sortedRowAddresses[0];
-        virtualRows.Add(new ComparisonVirtualRow { Address = lastRowAddress, SegmentIndex = segmentIndex });
+        // First sweep: count gap rows so output arrays can be sized exactly
+        // (avoids doubling + trim pass).
+        int gapRowCount = 0;
+        for (int i = 1; i < dataRowCount; i++)
+        {
+            long gap = sortedRowAddresses[i] - sortedRowAddresses[i - 1];
+            if (gap > BytesPerRow) gapRowCount++;
+        }
 
-        for (int i = 1; i < sortedRowAddresses.Count; i++)
+        int totalRows = dataRowCount + gapRowCount;
+        addressBytes = new byte[totalRows * 4];
+        flags = new byte[totalRows];
+        gapDataBytes = new byte[gapRowCount * 12];
+
+        int segIdx = 0;
+        long firstAddr = sortedRowAddresses[0];
+        long segStart = firstAddr;
+        long segLastAddr = firstAddr;
+
+        int rowPos = 0;
+        int gapPos = 0;
+
+        // Emit first data row
+        WriteUint32LE(addressBytes, 0, (uint)firstAddr);
+        flags[0] = (byte)((segIdx & 0x7F) << 1); // not gap
+        rowPos = 1;
+
+        long lastRowAddress = firstAddr;
+        for (int i = 1; i < dataRowCount; i++)
         {
             long currentRowAddress = sortedRowAddresses[i];
             long gap = currentRowAddress - lastRowAddress;
 
             if (gap >= SegmentGapThreshold)
-                segmentIndex++;
+            {
+                // Close prior segment at the last data row of that segment
+                long endAddr = segLastAddr + BytesPerRow - 1;
+                segments.Add(new ComparisonSegment
+                {
+                    Start = segStart,
+                    End = endAddr,
+                    Size = endAddr - segStart + 1
+                });
+                segIdx++;
+                segStart = currentRowAddress;
+            }
 
             if (gap > BytesPerRow)
             {
                 long skippedBytes = gap - BytesPerRow;
                 long gapStart = lastRowAddress + BytesPerRow;
                 long gapEnd = currentRowAddress - 1;
-                virtualRows.Add(new ComparisonVirtualRow
-                {
-                    IsGap = true,
-                    SegmentIndex = segmentIndex,
-                    SkippedBytes = skippedBytes,
-                    GapStartAddr = gapStart,
-                    GapEndAddr = gapEnd
-                });
+                int gapByteOffset = gapPos * 12;
+                WriteUint32LE(gapDataBytes, gapByteOffset, (uint)gapStart);
+                WriteUint32LE(gapDataBytes, gapByteOffset + 4, (uint)gapEnd);
+                WriteUint32LE(gapDataBytes, gapByteOffset + 8, (uint)skippedBytes);
+                flags[rowPos] = (byte)(1 | ((segIdx & 0x7F) << 1));
+                // addressBytes entry for gap rows stays zero (unused by JS side)
+                rowPos++;
+                gapPos++;
             }
 
-            virtualRows.Add(new ComparisonVirtualRow { Address = currentRowAddress, SegmentIndex = segmentIndex });
+            WriteUint32LE(addressBytes, rowPos * 4, (uint)currentRowAddress);
+            flags[rowPos] = (byte)((segIdx & 0x7F) << 1);
+            rowPos++;
+
             lastRowAddress = currentRowAddress;
+            segLastAddr = currentRowAddress;
         }
 
-        return virtualRows;
-    }
-
-    private static List<ComparisonSegment> BuildSegments(List<ComparisonVirtualRow> virtualRows)
-    {
-        var segments = new List<ComparisonSegment>();
-        if (virtualRows.Count == 0)
-            return segments;
-
-        var segmentsMap = new Dictionary<int, (long start, long end)>();
-
-        foreach (var vRow in virtualRows)
+        // Close final segment
         {
-            if (vRow.IsGap) continue;
-
-            if (segmentsMap.TryGetValue(vRow.SegmentIndex, out var range))
-            {
-                segmentsMap[vRow.SegmentIndex] = (range.start, vRow.Address);
-            }
-            else
-            {
-                segmentsMap[vRow.SegmentIndex] = (vRow.Address, vRow.Address);
-            }
-        }
-
-        foreach (var kvp in segmentsMap.OrderBy(k => k.Key))
-        {
-            long endAddress = kvp.Value.end + BytesPerRow - 1;
+            long endAddr = segLastAddr + BytesPerRow - 1;
             segments.Add(new ComparisonSegment
             {
-                Start = kvp.Value.start,
-                End = endAddress,
-                Size = endAddress - kvp.Value.start + 1
+                Start = segStart,
+                End = endAddr,
+                Size = endAddr - segStart + 1
             });
         }
+    }
 
-        return segments;
+    private static void WriteUint32LE(byte[] buf, int offset, uint value)
+    {
+        buf[offset] = (byte)(value & 0xFF);
+        buf[offset + 1] = (byte)((value >> 8) & 0xFF);
+        buf[offset + 2] = (byte)((value >> 16) & 0xFF);
+        buf[offset + 3] = (byte)((value >> 24) & 0xFF);
     }
 
     public List<long> GetDiffAddresses() => _diffAddresses;
 
-    public List<ComparisonVirtualRow> GetVirtualRows() => _virtualRows;
+    /// <summary>
+    /// Returns the packed virtual-row arrays directly (zero-copy to JS as Uint8Array).
+    /// Replaces the previous GetVirtualRows() → PackVirtualRows flow.
+    /// </summary>
+    public void GetPackedVirtualRows(out byte[] addressBytes, out byte[] flags, out byte[] gapDataBytes)
+    {
+        addressBytes = _vrAddressBytes;
+        flags = _vrFlags;
+        gapDataBytes = _gapDataBytes;
+    }
 
     public List<ComparisonSegment> GetDataSegments() => _segments;
 
@@ -318,16 +365,9 @@ public class ComparisonResult
 
     private Dictionary<long, int> BuildRowIndexMap()
     {
-        var map = new Dictionary<long, int>();
-        int dataRowIdx = 0;
-        foreach (var vr in _virtualRows)
-        {
-            if (!vr.IsGap)
-            {
-                map[vr.Address] = dataRowIdx;
-                dataRowIdx++;
-            }
-        }
+        var map = new Dictionary<long, int>(_rowAddresses.Count);
+        for (int i = 0; i < _rowAddresses.Count; i++)
+            map[_rowAddresses[i]] = i;
         return map;
     }
 

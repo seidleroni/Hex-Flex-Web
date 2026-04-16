@@ -232,8 +232,8 @@ else
             Console.WriteLine($"[PERF] Compare.GetDiffArrays: {sw.ElapsedMilliseconds}ms ({_diffTypes.Length} bytes)");
 
             sw.Restart();
-            PackVirtualRows(_comparison.GetVirtualRows(), out _vrAddressBytes, out _vrFlags, out _gapDataBytes);
-            Console.WriteLine($"[PERF] Compare.PackVirtualRows: {sw.ElapsedMilliseconds}ms ({_vrFlags.Length} rows, {_gapDataBytes.Length / 12} gaps)");
+            _comparison.GetPackedVirtualRows(out _vrAddressBytes, out _vrFlags, out _gapDataBytes);
+            Console.WriteLine($"[PERF] Compare.GetPackedVirtualRows: {sw.ElapsedMilliseconds}ms ({_vrFlags.Length} rows, {_gapDataBytes.Length / 12} gaps)");
 
             _highlightedDiffIndex = -1;
             _activeSegmentIndex = 0;
@@ -243,49 +243,6 @@ else
             _compSegmentsMapped = _segments.Select(s => new MemorySegment(s.Start, s.End)).ToList();
             Console.WriteLine($"[PERF] Compare.TryCompare total: {totalSw.ElapsedMilliseconds}ms");
         }
-    }
-
-    private static void PackVirtualRows(
-        List<ComparisonVirtualRow> rows,
-        out byte[] addressBytes, out byte[] flags, out byte[] gapDataBytes)
-    {
-        int count = rows.Count;
-        addressBytes = new byte[count * 4]; // uint32 LE per row
-        flags = new byte[count];
-
-        // Count gaps first
-        int gapCount = 0;
-        for (int i = 0; i < count; i++)
-            if (rows[i].IsGap) gapCount++;
-
-        gapDataBytes = new byte[gapCount * 12]; // 3 x uint32 LE per gap
-        int gapIdx = 0;
-
-        for (int i = 0; i < count; i++)
-        {
-            var vr = rows[i];
-            flags[i] = (byte)((vr.IsGap ? 1 : 0) | ((vr.SegmentIndex & 0x7F) << 1));
-
-            if (vr.IsGap)
-            {
-                WriteUint32LE(gapDataBytes, gapIdx * 12, (uint)vr.GapStartAddr);
-                WriteUint32LE(gapDataBytes, gapIdx * 12 + 4, (uint)vr.GapEndAddr);
-                WriteUint32LE(gapDataBytes, gapIdx * 12 + 8, (uint)vr.SkippedBytes);
-                gapIdx++;
-            }
-            else
-            {
-                WriteUint32LE(addressBytes, i * 4, (uint)vr.Address);
-            }
-        }
-    }
-
-    private static void WriteUint32LE(byte[] buf, int offset, uint value)
-    {
-        buf[offset] = (byte)(value & 0xFF);
-        buf[offset + 1] = (byte)((value >> 8) & 0xFF);
-        buf[offset + 2] = (byte)((value >> 16) & 0xFF);
-        buf[offset + 3] = (byte)((value >> 24) & 0xFF);
     }
 
     private static async Task<(SparseMemory? memory, string? error)> ParseFile(IBrowserFile file)
