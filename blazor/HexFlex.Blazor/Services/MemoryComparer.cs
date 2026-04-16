@@ -241,6 +241,75 @@ public class ComparisonResult
     public List<ComparisonSegment> GetDataSegments() => _segments;
 
     /// <summary>
+    /// Look up the diff entry at a single address. Returns null if the address is
+    /// outside every tracked row. Intended for correctness checks / test assertions —
+    /// the bulk rendering path uses the flat arrays from <see cref="GetDiffArrays"/>.
+    /// </summary>
+    public DiffEntry? GetDiffEntry(long address)
+    {
+        long rowAddr = (address / BytesPerRow) * BytesPerRow;
+
+        // Find the data row with this address. _virtualRows mixes gap + data rows,
+        // but data rows appear in ascending address order. Build a flat data-row
+        // index map once (lazy).
+        var map = _rowIndexMap ??= BuildRowIndexMap();
+        if (!map.TryGetValue(rowAddr, out int rowIdx))
+            return null;
+
+        int colOffset = (int)(address - rowAddr);
+        int flatIdx = rowIdx * BytesPerRow + colOffset;
+
+        if (_validity[flatIdx] == 0)
+            return null;
+
+        var type = (DiffType)_diffTypes[flatIdx];
+        byte? byteA = (type == DiffType.Added) ? (byte?)null : _bytesA[flatIdx];
+        byte? byteB = (type == DiffType.Removed) ? (byte?)null : _bytesB[flatIdx];
+        return new DiffEntry(type, byteA, byteB);
+    }
+
+    private Dictionary<long, int>? _rowIndexMap;
+
+    private Dictionary<long, int> BuildRowIndexMap()
+    {
+        var map = new Dictionary<long, int>();
+        int dataRowIdx = 0;
+        foreach (var vr in _virtualRows)
+        {
+            if (!vr.IsGap)
+            {
+                map[vr.Address] = dataRowIdx;
+                dataRowIdx++;
+            }
+        }
+        return map;
+    }
+
+    /// <summary>
+    /// Total number of valid (non-null) byte positions tracked across both files.
+    /// Matches the ground-truth "total_addresses" metric.
+    /// </summary>
+    public long CountValidEntries()
+    {
+        long count = 0;
+        for (int i = 0; i < _validity.Length; i++)
+            if (_validity[i] != 0) count++;
+        return count;
+    }
+
+    /// <summary>
+    /// Count of valid entries that match a particular diff type. Intended for tests.
+    /// </summary>
+    public long CountByType(DiffType type)
+    {
+        byte t = (byte)type;
+        long count = 0;
+        for (int i = 0; i < _validity.Length; i++)
+            if (_validity[i] != 0 && _diffTypes[i] == t) count++;
+        return count;
+    }
+
+    /// <summary>
     /// Returns pre-built flat arrays. No extraction needed — built during construction.
     /// </summary>
     public void GetDiffArrays(

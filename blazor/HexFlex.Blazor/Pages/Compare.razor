@@ -292,15 +292,24 @@ else
     {
         try
         {
+            var totalSw = System.Diagnostics.Stopwatch.StartNew();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             using var stream = file.OpenReadStream(maxAllowedSize: Constants.MaxFileSize);
             using var ms = new System.IO.MemoryStream();
             await stream.CopyToAsync(ms);
             var content = System.Text.Encoding.UTF8.GetString(ms.ToArray());
+            Console.WriteLine($"[PERF] Compare.ParseFile.ReadDecode({file.Name}): {sw.ElapsedMilliseconds}ms ({content.Length} chars, {ms.Length} bytes)");
 
+            sw.Restart();
             if (!FileValidator.IsIntelHexContent(content))
                 return (null, "The file does not appear to be a valid Intel HEX file.");
+            Console.WriteLine($"[PERF] Compare.ParseFile.Validate({file.Name}): {sw.ElapsedMilliseconds}ms");
 
-            return (HexParser.Parse(content), null);
+            sw.Restart();
+            var memory = HexParser.Parse(content);
+            Console.WriteLine($"[PERF] Compare.ParseFile.Parse({file.Name}): {sw.ElapsedMilliseconds}ms");
+            Console.WriteLine($"[PERF] Compare.ParseFile.Total({file.Name}): {totalSw.ElapsedMilliseconds}ms");
+            return (memory, null);
         }
         catch (Exception ex)
         {

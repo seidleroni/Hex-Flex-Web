@@ -34,13 +34,8 @@ public class MemoryComparerTests
         Assert.Equal(expectedAdded, result.Stats.Added);
         Assert.Equal(expectedRemoved, result.Stats.Removed);
 
-        // Verify total addresses in diff map
-        long actualTotal = result.DiffMap.Count;
-        Assert.Equal(expectedTotal, actualTotal);
-
-        // Verify unchanged count
-        long actualUnchanged = result.DiffMap.Values.Count(d => d.Type == DiffType.Unchanged);
-        Assert.Equal(expectedUnchanged, actualUnchanged);
+        Assert.Equal(expectedTotal, result.CountValidEntries());
+        Assert.Equal(expectedUnchanged, result.CountByType(DiffType.Unchanged));
     }
 
     [Fact]
@@ -67,6 +62,7 @@ public class MemoryComparerTests
             byte expectedB = (byte)sample.GetProperty("value_b").GetInt32();
 
             var entry = result.GetDiffEntry(addr);
+            Assert.NotNull(entry);
             Assert.Equal(DiffType.Modified, entry.Type);
             Assert.Equal(expectedA, entry.ByteA);
             Assert.Equal(expectedB, entry.ByteB);
@@ -96,6 +92,7 @@ public class MemoryComparerTests
             byte expectedVal = (byte)sample.GetProperty("value").GetInt32();
 
             var entry = result.GetDiffEntry(addr);
+            Assert.NotNull(entry);
             Assert.Equal(DiffType.Added, entry.Type);
             Assert.Null(entry.ByteA);
             Assert.Equal(expectedVal, entry.ByteB);
@@ -125,6 +122,7 @@ public class MemoryComparerTests
             byte expectedVal = (byte)sample.GetProperty("value").GetInt32();
 
             var entry = result.GetDiffEntry(addr);
+            Assert.NotNull(entry);
             Assert.Equal(DiffType.Removed, entry.Type);
             Assert.Equal(expectedVal, entry.ByteA);
             Assert.Null(entry.ByteB);
@@ -146,7 +144,7 @@ public class MemoryComparerTests
         Assert.Equal(0, result.Stats.Modified);
         Assert.Equal(0, result.Stats.Added);
         Assert.Equal(0, result.Stats.Removed);
-        Assert.Equal(DiffType.Unchanged, result.GetDiffEntry(0).Type);
+        Assert.Equal(DiffType.Unchanged, result.GetDiffEntry(0)!.Type);
     }
 
     [Fact]
@@ -161,6 +159,7 @@ public class MemoryComparerTests
 
         Assert.Equal(1, result.Stats.Modified);
         var entry = result.GetDiffEntry(100);
+        Assert.NotNull(entry);
         Assert.Equal(DiffType.Modified, entry.Type);
         Assert.Equal((byte)0x01, entry.ByteA);
         Assert.Equal((byte)0x02, entry.ByteB);
@@ -177,6 +176,7 @@ public class MemoryComparerTests
 
         Assert.Equal(1, result.Stats.Added);
         var entry = result.GetDiffEntry(200);
+        Assert.NotNull(entry);
         Assert.Equal(DiffType.Added, entry.Type);
         Assert.Null(entry.ByteA);
         Assert.Equal((byte)0xFF, entry.ByteB);
@@ -193,6 +193,7 @@ public class MemoryComparerTests
 
         Assert.Equal(1, result.Stats.Removed);
         var entry = result.GetDiffEntry(300);
+        Assert.NotNull(entry);
         Assert.Equal(DiffType.Removed, entry.Type);
         Assert.Equal((byte)0xAA, entry.ByteA);
         Assert.Null(entry.ByteB);
@@ -205,6 +206,6 @@ public class MemoryComparerTests
         Assert.Equal(0, result.Stats.Modified);
         Assert.Equal(0, result.Stats.Added);
         Assert.Equal(0, result.Stats.Removed);
-        Assert.Empty(result.DiffMap);
+        Assert.Equal(0, result.CountValidEntries());
     }
 }
